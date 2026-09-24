@@ -1,10 +1,12 @@
 import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Optional
 
 import jwt
 from fastapi import FastAPI, HTTPException, Depends
+from fastapi.responses import FileResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from passlib.context import CryptContext
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
@@ -98,6 +100,18 @@ class Token(BaseModel):
     token_type: str = "bearer"
 
 
+class AdminUserCreate(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=8, max_length=72)
+    full_name: Optional[str] = None
+    is_admin: bool = False
+
+
+class AdminUserUpdate(BaseModel):
+    is_admin: Optional[bool] = None
+    password: Optional[str] = Field(default=None, min_length=8, max_length=72)
+
+
 # ---------- Dependencies ----------
 def get_db():
     db = SessionLocal()
@@ -184,6 +198,87 @@ def delete_product(
     db.delete(product)
     db.commit()
     return {"message": "Đã xóa sản phẩm"}
+
+
+# ---------- Admin: trang quản trị ----------
+ADMIN_PAGE = Path(__file__).parent / "admin.html"
+
+
+@app.get("/admin", include_in_schema=False)
+def admin_page():
+    # Chỉ trả về giao diện; mọi thao tác dữ liệu đều qua API cần token admin
+    return FileResponse(ADMIN_PAGE)
+
+
+# ---------- Admin: quản lý tài khoản ----------
+@app.get("/admin/users", response_model=list[UserOut])
+def admin_list_users(
+    db: Session = Depends(get_db),
+    _admin: UserDB = Depends(require_admin),
+):
+    return db.query(UserDB).order_by(UserDB.id).all()
+
+
+@app.post("/admin/users", response_model=UserOut, status_code=201)
+def admin_create_user(
+    data: AdminUserCreate,
+    db: Session = Depends(get_db),
+    _admin: UserDB = Depends(require_admin),
+):
+    email = data.email.lower().strip()
+    if db.query(UserDB).filter(UserDB.email == email).first():
+        raise HTTPException(status_code=400, detail="Email đã được đăng ký")
+    user = UserDB(
+        email=email,
+        hashed_password=pwd_context.hash(data.password),
+        full_name=data.full_name,
+        is_admin=data.is_admin,
+    )
+    db.add(user)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Email đã được đăng ký")
+    db.refresh(user)
+    return user
+
+
+@app.patch("/admin/users/{user_id}", response_model=UserOut)
+def admin_update_user(
+    user_id: int,
+    data: AdminUserUpdate,
+    db: Session = Depends(get_db),
+    admin: UserDB = Depends(require_admin),
+):
+    user = db.get(UserDB, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="Không tìm thấy tài khoản")
+    if data.is_admin is not None:
+        if user.id == admin.id and not data.is_admin:
+            raise HTTPException(status_code=400, detail="Không thể tự bỏ quyền admin của mình")
+        user.is_admin = data.is_admin
+    if data.password is not None:
+        user.hashed_password = pwd_context.hash(data.password)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+@app.delete("/admin/users/{user_id}")
+def admin_delete_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+    admin: UserDB = Depends(require_admin),
+):
+    user = db.get(UserDB, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="Không tìm thấy tài khoản")
+    if user.id == admin.id:
+        raise HTTPException(status_code=400, detail="Không thể tự xoá tài khoản của mình")
+    db.delete(user)
+    db.commit()
+    return {"message": "Đã xóa tài khoản"}
 
 
 # ---------- Auth ----------

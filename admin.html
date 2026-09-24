@@ -1,0 +1,655 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Stylish Admin</title>
+    <style>
+      :root {
+        --bg: #f6f6f7;
+        --card: #fff;
+        --tx: #1a1a1a;
+        --mut: #777;
+        --bd: #e2e2e5;
+        --pri: #f83758;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #161617;
+          --card: #212123;
+          --tx: #f0f0f0;
+          --mut: #9a9a9f;
+          --bd: #333336;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font:
+          15px system-ui,
+          sans-serif;
+        background: var(--bg);
+        color: var(--tx);
+      }
+      .hidden {
+        display: none !important;
+      }
+      .wrap {
+        max-width: 960px;
+        margin: 0 auto;
+        padding: 16px;
+      }
+      .card {
+        background: var(--card);
+        border: 1px solid var(--bd);
+        border-radius: 12px;
+        padding: 16px;
+      }
+      header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-bottom: 16px;
+      }
+      h1 {
+        font-size: 20px;
+        margin: 0;
+      }
+      .tabs {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 12px;
+      }
+      .tabs button.on {
+        background: var(--pri);
+        color: #fff;
+        border-color: var(--pri);
+      }
+      .bar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 12px;
+      }
+      button {
+        font: inherit;
+        padding: 8px 12px;
+        border-radius: 8px;
+        border: 1px solid var(--bd);
+        background: var(--card);
+        color: var(--tx);
+        cursor: pointer;
+      }
+      button:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+      }
+      button.pri {
+        background: var(--pri);
+        border-color: var(--pri);
+        color: #fff;
+      }
+      button.danger {
+        color: #d92d2d;
+        border-color: #d92d2d55;
+      }
+      input {
+        font: inherit;
+        width: 100%;
+        padding: 9px 10px;
+        border-radius: 8px;
+        border: 1px solid var(--bd);
+        background: var(--bg);
+        color: var(--tx);
+      }
+      label {
+        display: block;
+        margin-bottom: 10px;
+        font-size: 13px;
+        color: var(--mut);
+      }
+      label.chk {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        color: var(--tx);
+      }
+      label.chk input {
+        width: auto;
+      }
+      .scroll {
+        overflow-x: auto;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 8px;
+        border-bottom: 1px solid var(--bd);
+        vertical-align: middle;
+      }
+      th {
+        font-size: 12px;
+        color: var(--mut);
+        font-weight: 600;
+      }
+      td img {
+        width: 44px;
+        height: 44px;
+        object-fit: cover;
+        border-radius: 8px;
+        display: block;
+      }
+      .act {
+        white-space: nowrap;
+        text-align: right;
+      }
+      .act button {
+        margin-left: 6px;
+      }
+      .mut {
+        color: var(--mut);
+      }
+      .badge {
+        padding: 2px 8px;
+        border-radius: 99px;
+        background: var(--bg);
+        border: 1px solid var(--bd);
+        font-size: 12px;
+      }
+      .badge.adm {
+        background: var(--pri);
+        border-color: var(--pri);
+        color: #fff;
+      }
+      dialog {
+        border: 1px solid var(--bd);
+        border-radius: 12px;
+        background: var(--card);
+        color: var(--tx);
+        width: min(420px, 92vw);
+        padding: 20px;
+      }
+      dialog::backdrop {
+        background: #0007;
+      }
+      .row {
+        display: flex;
+        gap: 8px;
+        justify-content: flex-end;
+        margin-top: 12px;
+      }
+      #login {
+        max-width: 360px;
+        margin: 12vh auto;
+      }
+      .err {
+        color: #d92d2d;
+        min-height: 1.2em;
+        font-size: 13px;
+      }
+      #toast {
+        position: fixed;
+        left: 50%;
+        bottom: 20px;
+        transform: translateX(-50%);
+        background: #222;
+        color: #fff;
+        padding: 10px 16px;
+        border-radius: 8px;
+        opacity: 0;
+        pointer-events: none;
+        transition: 0.2s;
+      }
+      #toast.show {
+        opacity: 1;
+      }
+      #toast.err {
+        background: #d92d2d;
+        color: #fff;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <form id="login" class="card">
+        <h1 style="margin-bottom: 14px">Stylish Admin</h1>
+        <label
+          >Email<input id="email" type="email" required autocomplete="username"
+        /></label>
+        <label
+          >Mật khẩu<input
+            id="pass"
+            type="password"
+            required
+            autocomplete="current-password"
+        /></label>
+        <div class="err" id="lerr"></div>
+        <button class="pri" style="width: 100%">Đăng nhập</button>
+      </form>
+
+      <div id="app" class="hidden">
+        <header>
+          <h1>Stylish Admin</h1>
+          <div>
+            <span class="mut" id="who"></span>
+            <button id="out">Đăng xuất</button>
+          </div>
+        </header>
+        <div class="tabs">
+          <button data-tab="products" class="on">Sản phẩm</button>
+          <button data-tab="users">Tài khoản</button>
+        </div>
+
+        <section id="products" class="card">
+          <div class="bar">
+            <b>Danh sách sản phẩm</b
+            ><button class="pri" id="addp">+ Thêm sản phẩm</button>
+          </div>
+          <div class="scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Ảnh</th>
+                  <th>Tên</th>
+                  <th>Giá</th>
+                  <th>Nhóm</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="ptable"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="users" class="card hidden">
+          <div class="bar">
+            <b>Danh sách tài khoản</b
+            ><button class="pri" id="addu">+ Thêm tài khoản</button>
+          </div>
+          <div class="scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Email</th>
+                  <th>Tên</th>
+                  <th>Vai trò</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="utable"></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <dialog id="pdlg">
+      <form id="pform">
+        <h3 style="margin-top: 0">Thêm sản phẩm</h3>
+        <label>Tên<input name="name" required /></label>
+        <label
+          >Giá (VNĐ)<input
+            name="price"
+            type="number"
+            min="0"
+            step="1000"
+            required
+        /></label>
+        <label
+          >Link ảnh (https://...)<input name="image_url" type="url" required
+        /></label>
+        <label class="chk"
+          ><input name="is_trending" type="checkbox" /> Sản phẩm trending</label
+        >
+        <div class="row">
+          <button type="button" data-close>Huỷ</button
+          ><button class="pri">Thêm</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="udlg">
+      <form id="uform">
+        <h3 style="margin-top: 0">Thêm tài khoản</h3>
+        <label>Email<input name="email" type="email" required /></label>
+        <label
+          >Mật khẩu (8–72 ký tự)<input
+            name="password"
+            type="password"
+            minlength="8"
+            maxlength="72"
+            required
+        /></label>
+        <label>Họ tên (không bắt buộc)<input name="full_name" /></label>
+        <label class="chk"
+          ><input name="is_admin" type="checkbox" /> Cấp quyền admin</label
+        >
+        <div class="row">
+          <button type="button" data-close>Huỷ</button
+          ><button class="pri">Thêm</button>
+        </div>
+      </form>
+    </dialog>
+
+    <div id="toast"></div>
+
+    <script>
+      const $ = (s) => document.querySelector(s);
+      let token = sessionStorage.getItem("t"),
+        me = null;
+
+      // Tạo phần tử DOM; dùng textContent nên dữ liệu không thể chèn HTML
+      function h(tag, props = {}, ...kids) {
+        const e = document.createElement(tag);
+        Object.assign(e, props);
+        e.append(...kids);
+        return e;
+      }
+      function toast(m, err) {
+        const t = $("#toast");
+        t.textContent = m;
+        t.className = "show" + (err ? " err" : "");
+        clearTimeout(toast.t);
+        toast.t = setTimeout(() => (t.className = ""), 3500);
+      }
+      const json = (method, body) => ({
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+      async function api(path, opt = {}) {
+        const r = await fetch(path, {
+          ...opt,
+          headers: { ...(opt.headers || {}), Authorization: "Bearer " + token },
+        });
+        if (r.status === 401) {
+          logout("Phiên đăng nhập đã hết hạn");
+          throw new Error("401");
+        }
+        let d = null;
+        try {
+          d = await r.json();
+        } catch {}
+        if (!r.ok) {
+          const x = d && d.detail;
+          throw new Error(
+            typeof x === "string"
+              ? x
+              : Array.isArray(x)
+                ? x.map((i) => i.msg).join("; ")
+                : "Lỗi " + r.status,
+          );
+        }
+        return d;
+      }
+      async function run(fn, ok) {
+        try {
+          await fn();
+          if (ok) toast(ok);
+        } catch (e) {
+          if (e.message !== "401") toast(e.message, true);
+        }
+      }
+
+      // ---------- Đăng nhập / đăng xuất ----------
+      function logout(msg) {
+        token = null;
+        me = null;
+        sessionStorage.removeItem("t");
+        $("#app").classList.add("hidden");
+        $("#login").classList.remove("hidden");
+        $("#lerr").textContent = msg || "";
+      }
+      function show() {
+        $("#login").classList.add("hidden");
+        $("#app").classList.remove("hidden");
+        $("#who").textContent = me.email;
+        loadProducts();
+        loadUsers();
+      }
+      async function checkAdmin() {
+        me = await api("/me");
+        if (!me.is_admin) {
+          logout("Tài khoản này không có quyền admin");
+          return false;
+        }
+        return true;
+      }
+      $("#login").onsubmit = async (e) => {
+        e.preventDefault();
+        $("#lerr").textContent = "";
+        try {
+          const r = await fetch("/login", {
+            method: "POST",
+            body: new URLSearchParams({
+              username: $("#email").value,
+              password: $("#pass").value,
+            }),
+          });
+          const d = await r.json();
+          if (!r.ok)
+            throw new Error(
+              typeof d.detail === "string" ? d.detail : "Đăng nhập thất bại",
+            );
+          token = d.access_token;
+          if (await checkAdmin()) {
+            sessionStorage.setItem("t", token);
+            $("#pass").value = "";
+            show();
+          }
+        } catch (err) {
+          if (err.message !== "401") $("#lerr").textContent = err.message;
+        }
+      };
+      $("#out").onclick = () => logout();
+
+      // ---------- Tab & hộp thoại ----------
+      document.querySelectorAll("[data-tab]").forEach(
+        (b) =>
+          (b.onclick = () => {
+            document
+              .querySelectorAll("[data-tab]")
+              .forEach((x) => x.classList.toggle("on", x === b));
+            $("#products").classList.toggle(
+              "hidden",
+              b.dataset.tab !== "products",
+            );
+            $("#users").classList.toggle("hidden", b.dataset.tab !== "users");
+          }),
+      );
+      document
+        .querySelectorAll("[data-close]")
+        .forEach((b) => (b.onclick = () => b.closest("dialog").close()));
+      $("#addp").onclick = () => {
+        $("#pform").reset();
+        $("#pdlg").showModal();
+      };
+      $("#addu").onclick = () => {
+        $("#uform").reset();
+        $("#udlg").showModal();
+      };
+
+      // ---------- Sản phẩm ----------
+      const thumb = (u) =>
+        /^https?:\/\//.test(u)
+          ? h("img", { src: u, alt: "", loading: "lazy" })
+          : h("span");
+
+      async function loadProducts() {
+        await run(async () => {
+          const [a, b] = await Promise.all([
+            fetch("/products").then((r) => r.json()),
+            fetch("/trending").then((r) => r.json()),
+          ]);
+          const rows = [...a, ...b].sort((x, y) => x.id - y.id);
+          $("#ptable").replaceChildren(
+            ...(rows.length
+              ? rows.map((p) =>
+                  h(
+                    "tr",
+                    {},
+                    h("td", {}, thumb(p.image_url)),
+                    h("td", { textContent: p.name }),
+                    h("td", {
+                      textContent: p.price.toLocaleString("vi-VN") + " ₫",
+                    }),
+                    h("td", {
+                      textContent: p.is_trending ? "Trending" : "Thường",
+                    }),
+                    h(
+                      "td",
+                      { className: "act" },
+                      h("button", {
+                        className: "danger",
+                        textContent: "Xoá",
+                        onclick: () => delProduct(p),
+                      }),
+                    ),
+                  ),
+                )
+              : [
+                  h(
+                    "tr",
+                    {},
+                    h("td", {
+                      colSpan: 5,
+                      className: "mut",
+                      textContent: "Chưa có sản phẩm",
+                    }),
+                  ),
+                ]),
+          );
+        });
+      }
+      $("#pform").onsubmit = (e) => {
+        e.preventDefault();
+        const d = new FormData(e.target);
+        run(async () => {
+          await api(
+            "/products",
+            json("POST", {
+              name: d.get("name").trim(),
+              price: parseFloat(d.get("price")),
+              image_url: d.get("image_url").trim(),
+              is_trending: d.has("is_trending"),
+            }),
+          );
+          $("#pdlg").close();
+          await loadProducts();
+        }, "Đã thêm sản phẩm");
+      };
+      function delProduct(p) {
+        if (!confirm('Xoá sản phẩm "' + p.name + '"?')) return;
+        run(async () => {
+          await api("/products/" + p.id, { method: "DELETE" });
+          await loadProducts();
+        }, "Đã xoá sản phẩm");
+      }
+
+      // ---------- Tài khoản ----------
+      async function loadUsers() {
+        await run(async () => {
+          const us = await api("/admin/users");
+          $("#utable").replaceChildren(
+            ...us.map((u) => {
+              const self = u.id === me.id;
+              return h(
+                "tr",
+                {},
+                h("td", { textContent: u.id }),
+                h("td", { textContent: u.email }),
+                h("td", { textContent: u.full_name || "" }),
+                h(
+                  "td",
+                  {},
+                  h("span", {
+                    className: "badge" + (u.is_admin ? " adm" : ""),
+                    textContent: u.is_admin ? "Admin" : "Người dùng",
+                  }),
+                ),
+                h(
+                  "td",
+                  { className: "act" },
+                  h("button", {
+                    textContent: "Đổi mật khẩu",
+                    onclick: () => resetPw(u),
+                  }),
+                  h("button", {
+                    textContent: u.is_admin ? "Bỏ admin" : "Cấp admin",
+                    disabled: self,
+                    title: self ? "Không thể tự đổi quyền của mình" : "",
+                    onclick: () => setAdmin(u, !u.is_admin),
+                  }),
+                  h("button", {
+                    className: "danger",
+                    textContent: "Xoá",
+                    disabled: self,
+                    title: self ? "Không thể tự xoá tài khoản của mình" : "",
+                    onclick: () => delUser(u),
+                  }),
+                ),
+              );
+            }),
+          );
+        });
+      }
+      $("#uform").onsubmit = (e) => {
+        e.preventDefault();
+        const d = new FormData(e.target);
+        run(async () => {
+          await api(
+            "/admin/users",
+            json("POST", {
+              email: d.get("email").trim(),
+              password: d.get("password"),
+              full_name: d.get("full_name").trim() || null,
+              is_admin: d.has("is_admin"),
+            }),
+          );
+          $("#udlg").close();
+          await loadUsers();
+        }, "Đã thêm tài khoản");
+      };
+      function setAdmin(u, v) {
+        run(
+          async () => {
+            await api("/admin/users/" + u.id, json("PATCH", { is_admin: v }));
+            await loadUsers();
+          },
+          v ? "Đã cấp quyền admin" : "Đã bỏ quyền admin",
+        );
+      }
+      function resetPw(u) {
+        const p = prompt("Mật khẩu mới cho " + u.email + " (8–72 ký tự):");
+        if (!p) return;
+        run(
+          () => api("/admin/users/" + u.id, json("PATCH", { password: p })),
+          "Đã đổi mật khẩu",
+        );
+      }
+      function delUser(u) {
+        if (!confirm("Xoá tài khoản " + u.email + "?")) return;
+        run(async () => {
+          await api("/admin/users/" + u.id, { method: "DELETE" });
+          await loadUsers();
+        }, "Đã xoá tài khoản");
+      }
+
+      // ---------- Khởi động ----------
+      if (token)
+        checkAdmin()
+          .then((ok) => ok && show())
+          .catch(() => {});
+    </script>
+  </body>
+</html>
