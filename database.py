@@ -9,7 +9,11 @@ if DATABASE_URL:
     # Đang chạy trên Render, dùng PostgreSQL
     # Render cấp URL dạng "postgres://", cần đổi thành "postgresql://" để SQLAlchemy hiểu
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
-    engine = create_engine(DATABASE_URL)
+    engine = create_engine(
+    DATABASE_URL,
+    pool_pre_ping=True,
+    connect_args={"connect_timeout": 10},
+)
 else:
     # Đang chạy local, dùng SQLite như cũ
     DATABASE_URL = "sqlite:///./stylish.db"
