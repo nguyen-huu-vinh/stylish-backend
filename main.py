@@ -59,6 +59,10 @@ class UserResponse(BaseModel):
         from_attributes = True
 
 
+class UserRoleUpdate(BaseModel):
+    is_admin: bool
+
+
 class Token(BaseModel):
     access_token: str
     token_type: str
@@ -223,6 +227,49 @@ def login(
 
     access_token = create_access_token(data={"sub": user.email})
     return {"access_token": access_token, "token_type": "bearer"}
+
+
+# ---------- API Quản Lý Users (Dành riêng cho Admin) ----------
+@app.get("/users", response_model=List[UserResponse])
+def get_all_users(
+    db: Session = Depends(get_db),
+    admin: UserDB = Depends(get_current_admin_user),
+):
+    return db.query(UserDB).all()
+
+
+@app.put("/users/{user_id}/role", response_model=UserResponse)
+def update_user_role(
+    user_id: int,
+    role_data: UserRoleUpdate,
+    db: Session = Depends(get_db),
+    admin: UserDB = Depends(get_current_admin_user),
+):
+    user = db.query(UserDB).filter(UserDB.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Không tìm thấy người dùng")
+
+    user.is_admin = role_data.is_admin
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+@app.delete("/users/{user_id}")
+def delete_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+    admin: UserDB = Depends(get_current_admin_user),
+):
+    user = db.query(UserDB).filter(UserDB.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Không tìm thấy người dùng")
+    if user.id == admin.id:
+        raise HTTPException(status_code=400, detail="Không thể xóa tài khoản của chính mình")
+
+    db.delete(user)
+    db.commit()
+    return {"message": "Xóa người dùng thành công"}
 
 
 # ---------- API Products ----------
