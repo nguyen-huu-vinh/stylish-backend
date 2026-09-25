@@ -23,7 +23,7 @@ SECRET_KEY = os.getenv("SECRET_KEY", "super-secret-key-for-local-dev")
 ALGORITHM = "HS256"
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
 
 # ---------- Schemas (Pydantic Models) ----------
@@ -160,11 +160,12 @@ async def lifespan(app: FastAPI):
             db.commit()
 
         # Tạo tài khoản Admin mặc định từ biến môi trường
-        admin_email = os.getenv("ADMIN_EMAIL")
-        admin_password = os.getenv("ADMIN_PASSWORD")
+        admin_email = os.getenv("ADMIN_EMAIL", "admin@gmail.com")
+        admin_password = os.getenv("ADMIN_PASSWORD", "Admin123456")
         if admin_email and admin_password:
             admin_email = admin_email.lower().strip()
-            if not db.query(UserDB).filter(UserDB.email == admin_email).first():
+            user = db.query(UserDB).filter(UserDB.email == admin_email).first()
+            if not user:
                 db.add(
                     UserDB(
                         email=admin_email,
@@ -173,6 +174,10 @@ async def lifespan(app: FastAPI):
                         is_admin=True,
                     )
                 )
+                db.commit()
+            elif not user.is_admin:
+                user.is_admin = True
+                user.hashed_password = pwd_context.hash(admin_password)
                 db.commit()
     finally:
         db.close()
@@ -204,6 +209,7 @@ def register(user_data: UserCreate, db: Session = Depends(get_db)):
 
 
 @app.post("/login", response_model=Token)
+@app.post("/token", response_model=Token)
 def login(
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db),
