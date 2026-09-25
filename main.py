@@ -197,6 +197,19 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
     access_token = create_access_token(data={"sub": user.email})
     return {"access_token": access_token, "token_type": "bearer", "is_admin": user.is_admin}
 
+# --- ENDPOINT LẤY THÔNG TIN USER ĐANG ĐĂNG NHẬP ---
+# Flutter (AuthService.me()) gọi endpoint này để kiểm tra phiên đăng nhập
+# còn hợp lệ hay không và lấy thông tin hiển thị (tên, email, is_admin).
+# Không trả hashed_password ra ngoài.
+@app.get("/me")
+def get_me(current_user: User = Depends(get_current_user)):
+    return {
+        "id": current_user.id,
+        "email": current_user.email,
+        "full_name": current_user.full_name,
+        "is_admin": current_user.is_admin,
+    }
+
 # --- ENDPOINTS QUẢN LÝ TÀI KHOẢN (USER MANAGEMENT) ---
 @app.get("/users")
 def get_all_users(db: Session = Depends(get_db), current_admin: User = Depends(get_current_admin)):
@@ -259,6 +272,24 @@ def delete_user(user_id: int, db: Session = Depends(get_db), current_admin: User
 @app.get("/products")
 def get_products(db: Session = Depends(get_db)):
     return db.query(Product).all()
+
+# Flutter (TrendingProductsScreen / ProductService) gọi endpoint này để lấy
+# danh sách sản phẩm nổi bật. Route này thiếu là nguyên nhân gây lỗi 404
+# hiển thị trên màn "Trending Products".
+@app.get("/trending")
+def get_trending_products(db: Session = Depends(get_db)):
+    return db.query(Product).filter(Product.is_trending == True).all()
+
+# Flutter (trang chi tiết sản phẩm / ProductService.fetchById) cũng cần route
+# lấy 1 sản phẩm theo id — đặt SAU "/trending" và "/products" (path cố định)
+# nhưng phải đứng trước mọi path có tham số khác nếu có thêm sau này, để
+# FastAPI không nhầm "/trending" thành một giá trị của {product_id}.
+@app.get("/products/{product_id}")
+def get_product_detail(product_id: int, db: Session = Depends(get_db)):
+    product = db.query(Product).filter(Product.id == product_id).first()
+    if not product:
+        raise HTTPException(status_code=404, detail="Không tìm thấy sản phẩm")
+    return product
 
 @app.post("/products")
 def create_product(product: ProductSchema, db: Session = Depends(get_db), current_admin: User = Depends(get_current_admin)):
