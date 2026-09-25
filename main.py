@@ -1,74 +1,89 @@
 import os
-from contextlib import asynccontextmanager
 from typing import List, Optional
-
 from fastapi import FastAPI, Depends, HTTPException, status
-from fastapi.responses import HTMLResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from pydantic import BaseModel, EmailStr
-from sqlalchemy import text
-from sqlalchemy.orm import Session
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse, FileResponse
+from pydantic import BaseModel
+from sqlalchemy import create_engine, Column, Integer, String, Float, Boolean
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker, Session
 from passlib.context import CryptContext
-import jwt
+from datetime import datetime, timedelta
+from jose import JWTError, jwt
 
-# Import từ các file trong cùng dự án
-from database import engine, SessionLocal, Base
-from models import ProductDB, UserDB
+# --- CẤU HÌNH DATABASE ---
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./app.db")
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
-# Tạo các bảng trong Database
-Base.metadata.create_all(bind=engine)
+engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False} if "sqlite" in DATABASE_URL else {})
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base = declarative_base()
 
-# Cấu hình bảo mật JWT
-SECRET_KEY = os.getenv("SECRET_KEY", "super-secret-key-for-local-dev")
+# --- CẤU HÌNH JWT & BẢO MẬT ---
+SECRET_KEY = "supersecretkey_change_me_in_production"
 ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 # 1 ngày
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
+# --- MODEL CƠ SỞ DỮ LIỆU ---
+class User(Base):
+    __tablename__ = "users"
+    id = Column(Integer, primary_primary_key=True, index=True) if hasattr(Column, "primary_primary_key") else Column(Integer, primary_key=True, index=True)
+    email = Column(String, unique=True, index=True, nullable=False)
+    hashed_password = Column(String, nullable=False)
+    full_name = Column(String, nullable=True)
+    is_admin = Column(Boolean, default=False)
 
-# ---------- Schemas (Pydantic Models) ----------
-class ProductCreate(BaseModel):
+class Product(Base):
+    __tablename__ = "products"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    price = Column(Float, nullable=False)
+    discount_price = Column(Float, nullable=True)
+    image_url = Column(String, nullable=True)
+    is_sale = Column(Boolean, default=False)
+    is_trending = Column(Boolean, default=False)
+
+Base.metadata.create_all(bind=engine)
+
+# --- PYDANTIC SCHEMAS ---
+class UserRegister(BaseModel):
+    email: str
+    password: str
+    full_name: Optional[str] = None
+
+class UserUpdate(BaseModel):
+    full_name: Optional[str] = None
+    email: Optional[str] = None
+    is_admin: Optional[bool] = None
+
+class ProductSchema(BaseModel):
     name: str
     price: float
     discount_price: Optional[float] = None
+    image_url: Optional[str] = None
     is_sale: bool = False
-    image_url: str
     is_trending: bool = False
 
-
-class ProductResponse(ProductCreate):
-    id: int
-
     class Config:
-        from_attributes = True
+        orm_mode = True
 
+# --- APP FASTAPI ---
+app = FastAPI(title="E-Commerce API")
 
-class UserCreate(BaseModel):
-    email: EmailStr
-    password: str
-    full_name: str
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-
-class UserResponse(BaseModel):
-    id: int
-    email: EmailStr
-    full_name: str
-    is_admin: bool
-
-    class Config:
-        from_attributes = True
-
-
-class UserRoleUpdate(BaseModel):
-    is_admin: bool
-
-
-class Token(BaseModel):
-    access_token: str
-    token_type: str
-
-
-# ---------- Hàm hỗ trợ DB & Auth ----------
+# Helper Functions
 def get_db():
     db = SessionLocal()
     try:
@@ -76,263 +91,154 @@ def get_db():
     finally:
         db.close()
 
+def verify_password(plain_password, hashed_password):
+    return pwd_context.verify(plain_password, hashed_password)
+
+def get_password_hash(password):
+    return pwd_context.hash(password)
 
 def create_access_token(data: dict):
     to_encode = data.copy()
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-    return encoded_jwt
+    expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    to_encode.update({"exp": expire})
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
-
-def get_current_user(
-    token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)
-):
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Không thể xác thực thông tin đăng nhập",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
+def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         email: str = payload.get("sub")
         if email is None:
-            raise credentials_exception
-    except jwt.PyJWTError:
-        raise credentials_exception
+            raise HTTPException(status_code=401, detail="Token không hợp lệ")
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Token không hợp lệ")
 
-    user = db.query(UserDB).filter(UserDB.email == email).first()
+    user = db.query(User).filter(User.email == email).first()
     if user is None:
-        raise credentials_exception
+        raise HTTPException(status_code=404, detail="User không tồn tại")
     return user
 
-
-def get_current_admin_user(current_user: UserDB = Depends(get_current_user)):
+def get_current_admin(current_user: User = Depends(get_current_user)):
     if not current_user.is_admin:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Bạn không có quyền truy cập quản trị",
-        )
+        raise HTTPException(status_code=403, detail="Bạn không có quyền Admin")
     return current_user
 
-
-# ---------- Seed dữ liệu & Khởi động ----------
-@asynccontextmanager
-async def lifespan(app: FastAPI):
+# Tạo sẵn tài khoản Admin mặc định nếu chưa có
+@app.on_event("startup")
+def startup_db_check():
     db = SessionLocal()
-    try:
-        # Tự động thêm cột mới vào PostgreSQL trên Render nếu bảng cũ chưa có
-        try:
-            db.execute(text("ALTER TABLE products ADD COLUMN IF NOT EXISTS discount_price FLOAT;"))
-            db.execute(text("ALTER TABLE products ADD COLUMN IF NOT EXISTS is_sale BOOLEAN DEFAULT FALSE;"))
-            db.commit()
-        except Exception:
-            db.rollback()
-
-        # Khởi tạo dữ liệu sản phẩm mẫu nếu chưa có
-        if db.query(ProductDB).count() == 0:
-            db.add_all(
-                [
-                    ProductDB(
-                        name="Áo thun trắng",
-                        price=199000,
-                        image_url="https://picsum.photos/id/1/300/300",
-                        is_trending=False,
-                    ),
-                    ProductDB(
-                        name="Quần jeans",
-                        price=450000,
-                        discount_price=390000,
-                        is_sale=True,
-                        image_url="https://picsum.photos/id/2/300/300",
-                        is_trending=False,
-                    ),
-                    ProductDB(
-                        name="Váy hoa",
-                        price=320000,
-                        image_url="https://picsum.photos/id/3/300/300",
-                        is_trending=True,
-                    ),
-                    ProductDB(
-                        name="Túi xách",
-                        price=280000,
-                        discount_price=220000,
-                        is_sale=True,
-                        image_url="https://picsum.photos/id/4/300/300",
-                        is_trending=True,
-                    ),
-                ]
-            )
-            db.commit()
-
-        # Tạo tài khoản Admin mặc định từ biến môi trường
-        admin_email = os.getenv("ADMIN_EMAIL", "admin@gmail.com")
-        admin_password = os.getenv("ADMIN_PASSWORD", "Admin123456")
-        if admin_email and admin_password:
-            admin_email = admin_email.lower().strip()
-            user = db.query(UserDB).filter(UserDB.email == admin_email).first()
-            if not user:
-                db.add(
-                    UserDB(
-                        email=admin_email,
-                        hashed_password=pwd_context.hash(admin_password),
-                        full_name="Admin",
-                        is_admin=True,
-                    )
-                )
-                db.commit()
-            elif not user.is_admin:
-                user.is_admin = True
-                user.hashed_password = pwd_context.hash(admin_password)
-                db.commit()
-    finally:
-        db.close()
-    yield
-
-
-app = FastAPI(title="Stylish App", lifespan=lifespan)
-
-
-# ---------- API Auth ----------
-@app.post("/register", response_model=UserResponse)
-def register(user_data: UserCreate, db: Session = Depends(get_db)):
-    email_clean = user_data.email.lower().strip()
-    if db.query(UserDB).filter(UserDB.email == email_clean).first():
-        raise HTTPException(
-            status_code=400, detail="Email này đã được đăng ký"
+    admin = db.query(User).filter(User.email == "admin@gmail.com").first()
+    if not admin:
+        admin_user = User(
+            email="admin@gmail.com",
+            hashed_password=get_password_hash("Admin123456"),
+            full_name="Administrator",
+            is_admin=True
         )
+        db.add(admin_user)
+        db.commit()
+    db.close()
 
-    new_user = UserDB(
-        email=email_clean,
-        hashed_password=pwd_context.hash(user_data.password),
+# --- ENDPOINTS GIAO DIỆN WEB ADMIN ---
+@app.get("/admin", response_class=HTMLResponse)
+def get_admin_page():
+    if os.path.exists("admin.html"):
+        return FileResponse("admin.html")
+    return "<h1>Chưa tìm thấy file admin.html!</h1>"
+
+# --- ENDPOINTS AUTH & ĐĂNG KÝ (Dùng cho Flutter & Web) ---
+@app.post("/register", status_code=201)
+def register(user_data: UserRegister, db: Session = Depends(get_db)):
+    existing = db.query(User).filter(User.email == user_data.email).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Email này đã được sử dụng!")
+    
+    new_user = User(
+        email=user_data.email,
+        hashed_password=get_password_hash(user_data.password),
         full_name=user_data.full_name,
-        is_admin=False,
+        is_admin=False
     )
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
-    return new_user
+    return {"message": "Đăng ký tài khoản thành công!", "user_id": new_user.id}
 
-
-@app.post("/login", response_model=Token)
-@app.post("/token", response_model=Token)
-def login(
-    form_data: OAuth2PasswordRequestForm = Depends(),
-    db: Session = Depends(get_db),
-):
-    email_clean = form_data.username.lower().strip()
-    user = db.query(UserDB).filter(UserDB.email == email_clean).first()
-    if not user or not pwd_context.verify(form_data.password, user.hashed_password):
-        raise HTTPException(
-            status_code=400, detail="Email hoặc mật khẩu không chính xác"
-        )
-
+@app.post("/login")
+def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.email == form_data.username).first()
+    if not user or not verify_password(form_data.password, user.hashed_password):
+        raise HTTPException(status_code=400, detail="Email hoặc mật khẩu không chính xác")
+    
     access_token = create_access_token(data={"sub": user.email})
-    return {"access_token": access_token, "token_type": "bearer"}
+    return {"access_token": access_token, "token_type": "bearer", "is_admin": user.is_admin}
 
+# --- ENDPOINTS QUẢN LÝ TÀI KHOẢN (USER MANAGEMENT) ---
+@app.get("/users")
+def get_all_users(db: Session = Depends(get_db), current_admin: User = Depends(get_current_admin)):
+    return db.query(User).all()
 
-# ---------- API Quản Lý Users (Dành riêng cho Admin) ----------
-@app.get("/users", response_model=List[UserResponse])
-def get_all_users(
-    db: Session = Depends(get_db),
-    admin: UserDB = Depends(get_current_admin_user),
-):
-    return db.query(UserDB).all()
-
-
-@app.put("/users/{user_id}/role", response_model=UserResponse)
-def update_user_role(
-    user_id: int,
-    role_data: UserRoleUpdate,
-    db: Session = Depends(get_db),
-    admin: UserDB = Depends(get_current_admin_user),
-):
-    user = db.query(UserDB).filter(UserDB.id == user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="Không tìm thấy người dùng")
-
-    user.is_admin = role_data.is_admin
+@app.post("/users")
+def create_user_by_admin(user_data: UserRegister, db: Session = Depends(get_db), current_admin: User = Depends(get_current_admin)):
+    existing = db.query(User).filter(User.email == user_data.email).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Email đã tồn tại!")
+    
+    user = User(
+        email=user_data.email,
+        hashed_password=get_password_hash(user_data.password),
+        full_name=user_data.full_name,
+        is_admin=False
+    )
+    db.add(user)
     db.commit()
-    db.refresh(user)
-    return user
+    return {"message": "Thêm người dùng thành công"}
 
+@app.put("/users/{user_id}")
+def update_user(user_id: int, user_data: UserUpdate, db: Session = Depends(get_db), current_admin: User = Depends(get_current_admin)):
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Không tìm thấy tài khoản")
+    
+    if user_data.full_name is not None:
+        user.full_name = user_data.full_name
+    if user_data.email is not None:
+        user.email = user_data.email
+    if user_data.is_admin is not None:
+        user.is_admin = user_data.is_admin
+
+    db.commit()
+    return {"message": "Cập nhật tài khoản thành công"}
 
 @app.delete("/users/{user_id}")
-def delete_user(
-    user_id: int,
-    db: Session = Depends(get_db),
-    admin: UserDB = Depends(get_current_admin_user),
-):
-    user = db.query(UserDB).filter(UserDB.id == user_id).first()
+def delete_user(user_id: int, db: Session = Depends(get_db), current_admin: User = Depends(get_current_admin)):
+    user = db.query(User).filter(User.id == user_id).first()
     if not user:
-        raise HTTPException(status_code=404, detail="Không tìm thấy người dùng")
-    if user.id == admin.id:
-        raise HTTPException(status_code=400, detail="Không thể xóa tài khoản của chính mình")
-
+        raise HTTPException(status_code=404, detail="Không tìm thấy tài khoản")
+    if user.id == current_admin.id:
+        raise HTTPException(status_code=400, detail="Không thể xóa tài khoản Admin đang đăng nhập!")
+    
     db.delete(user)
     db.commit()
-    return {"message": "Xóa người dùng thành công"}
+    return {"message": "Đã xóa tài khoản thành công"}
 
-
-# ---------- API Products ----------
-@app.get("/products", response_model=List[ProductResponse])
+# --- ENDPOINTS QUẢN LÝ SẢN PHẨM (PRODUCT MANAGEMENT) ---
+@app.get("/products")
 def get_products(db: Session = Depends(get_db)):
-    return db.query(ProductDB).all()
+    return db.query(Product).all()
 
-
-@app.post(
-    "/products",
-    response_model=ProductResponse,
-    status_code=status.HTTP_201_CREATED,
-)
-def create_product(
-    product: ProductCreate,
-    db: Session = Depends(get_db),
-    admin: UserDB = Depends(get_current_admin_user),
-):
-    new_product = ProductDB(**product.model_dump())
-    db.add(new_product)
+@app.post("/products")
+def create_product(product: ProductSchema, db: Session = Depends(get_db), current_admin: User = Depends(get_current_admin)):
+    new_p = Product(**product.dict())
+    db.add(new_p)
     db.commit()
-    db.refresh(new_product)
-    return new_product
-
-
-@app.put("/products/{product_id}", response_model=ProductResponse)
-def update_product(
-    product_id: int,
-    product_data: ProductCreate,
-    db: Session = Depends(get_db),
-    admin: UserDB = Depends(get_current_admin_user),
-):
-    product = db.query(ProductDB).filter(ProductDB.id == product_id).first()
-    if not product:
-        raise HTTPException(status_code=404, detail="Không tìm thấy sản phẩm")
-
-    for key, value in product_data.model_dump().items():
-        setattr(product, key, value)
-
-    db.commit()
-    db.refresh(product)
-    return product
-
+    db.refresh(new_p)
+    return new_p
 
 @app.delete("/products/{product_id}")
-def delete_product(
-    product_id: int,
-    db: Session = Depends(get_db),
-    admin: UserDB = Depends(get_current_admin_user),
-):
-    product = db.query(ProductDB).filter(ProductDB.id == product_id).first()
-    if not product:
+def delete_product(product_id: int, db: Session = Depends(get_db), current_admin: User = Depends(get_current_admin)):
+    p = db.query(Product).filter(Product.id == product_id).first()
+    if not p:
         raise HTTPException(status_code=404, detail="Không tìm thấy sản phẩm")
-
-    db.delete(product)
+    db.delete(p)
     db.commit()
-    return {"message": "Đã xóa sản phẩm thành công"}
-
-
-# ---------- Route Trang Admin HTML ----------
-@app.get("/admin", response_class=HTMLResponse)
-def get_admin_page():
-    if os.path.exists("admin.html"):
-        with open("admin.html", "r", encoding="utf-8") as f:
-            return f.read()
-    return "<h1>Trang admin.html không tồn tại trong thư mục gốc.</h1>"
+    return {"message": "Đã xóa sản phẩm"}
