@@ -203,7 +203,7 @@ def register(user_data: UserCreate, db: Session = Depends(get_db)):
     return new_user
 
 
-@app.post("/token", response_model=Token)
+@app.post("/login", response_model=Token)
 def login(
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db),
