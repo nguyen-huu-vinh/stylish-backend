@@ -163,10 +163,16 @@
         background: var(--bg);
         border: 1px solid var(--bd);
         font-size: 12px;
+        margin-right: 4px;
       }
       .badge.adm {
         background: var(--pri);
         border-color: var(--pri);
+        color: #fff;
+      }
+      .badge.sale {
+        background: #d92d2d;
+        border-color: #d92d2d;
         color: #fff;
       }
       dialog {
@@ -250,8 +256,8 @@
 
         <section id="products" class="card">
           <div class="bar">
-            <b>Danh sách sản phẩm</b
-            ><button class="pri" id="addp">+ Thêm sản phẩm</button>
+            <b>Danh sách sản phẩm</b>
+            <button class="pri" id="addp">+ Thêm sản phẩm</button>
           </div>
           <div class="scroll">
             <table>
@@ -271,8 +277,8 @@
 
         <section id="users" class="card hidden">
           <div class="bar">
-            <b>Danh sách tài khoản</b
-            ><button class="pri" id="addu">+ Thêm tài khoản</button>
+            <b>Danh sách tài khoản</b>
+            <button class="pri" id="addu">+ Thêm tài khoản</button>
           </div>
           <div class="scroll">
             <table>
@@ -292,12 +298,14 @@
       </div>
     </div>
 
+    <!-- Modal Sản phẩm -->
     <dialog id="pdlg">
       <form id="pform">
-        <h3 style="margin-top: 0">Thêm sản phẩm</h3>
+        <h3 id="pform-title" style="margin-top: 0">Thêm sản phẩm</h3>
+        <input type="hidden" name="id" />
         <label>Tên<input name="name" required /></label>
         <label
-          >Giá (VNĐ)<input
+          >Giá gốc (VNĐ)<input
             name="price"
             type="number"
             min="0"
@@ -305,18 +313,30 @@
             required
         /></label>
         <label
+          >Giá giảm (VNĐ - Không bắt buộc)<input
+            name="discount_price"
+            type="number"
+            min="0"
+            step="1000"
+        /></label>
+        <label class="chk"
+          ><input name="is_sale" type="checkbox" /> Sản phẩm đang giảm giá
+          (Sale)</label
+        >
+        <label
           >Link ảnh (https://...)<input name="image_url" type="url" required
         /></label>
         <label class="chk"
           ><input name="is_trending" type="checkbox" /> Sản phẩm trending</label
         >
         <div class="row">
-          <button type="button" data-close>Huỷ</button
-          ><button class="pri">Thêm</button>
+          <button type="button" data-close>Huỷ</button>
+          <button class="pri" id="pform-btn">Thêm</button>
         </div>
       </form>
     </dialog>
 
+    <!-- Modal Tài khoản -->
     <dialog id="udlg">
       <form id="uform">
         <h3 style="margin-top: 0">Thêm tài khoản</h3>
@@ -334,8 +354,8 @@
           ><input name="is_admin" type="checkbox" /> Cấp quyền admin</label
         >
         <div class="row">
-          <button type="button" data-close>Huỷ</button
-          ><button class="pri">Thêm</button>
+          <button type="button" data-close>Huỷ</button>
+          <button class="pri">Thêm</button>
         </div>
       </form>
     </dialog>
@@ -347,7 +367,6 @@
       let token = sessionStorage.getItem("t"),
         me = null;
 
-      // Tạo phần tử DOM; dùng textContent nên dữ liệu không thể chèn HTML
       function h(tag, props = {}, ...kids) {
         const e = document.createElement(tag);
         Object.assign(e, props);
@@ -401,7 +420,7 @@
         }
       }
 
-      // ---------- Đăng nhập / đăng xuất ----------
+      // Auth
       function logout(msg) {
         token = null;
         me = null;
@@ -453,7 +472,7 @@
       };
       $("#out").onclick = () => logout();
 
-      // ---------- Tab & hộp thoại ----------
+      // Tab & Modal
       document.querySelectorAll("[data-tab]").forEach(
         (b) =>
           (b.onclick = () => {
@@ -470,53 +489,110 @@
       document
         .querySelectorAll("[data-close]")
         .forEach((b) => (b.onclick = () => b.closest("dialog").close()));
-      $("#addp").onclick = () => {
-        $("#pform").reset();
-        $("#pdlg").showModal();
-      };
-      $("#addu").onclick = () => {
-        $("#uform").reset();
-        $("#udlg").showModal();
-      };
 
-      // ---------- Sản phẩm ----------
+      // Sản phẩm
       const thumb = (u) =>
         /^https?:\/\//.test(u)
           ? h("img", { src: u, alt: "", loading: "lazy" })
           : h("span");
 
+      $("#addp").onclick = () => {
+        $("#pform").reset();
+        $("#pform").elements["id"].value = "";
+        $("#pform-title").textContent = "Thêm sản phẩm";
+        $("#pform-btn").textContent = "Thêm";
+        $("#pdlg").showModal();
+      };
+
+      function editProduct(p) {
+        $("#pform").reset();
+        const f = $("#pform").elements;
+        f["id"].value = p.id;
+        f["name"].value = p.name;
+        f["price"].value = p.price;
+        f["discount_price"].value = p.discount_price || "";
+        f["is_sale"].checked = p.is_sale;
+        f["image_url"].value = p.image_url;
+        f["is_trending"].checked = p.is_trending;
+
+        $("#pform-title").textContent = "Chỉnh sửa sản phẩm";
+        $("#pform-btn").textContent = "Cập nhật";
+        $("#pdlg").showModal();
+      }
+
       async function loadProducts() {
         await run(async () => {
-          const [a, b] = await Promise.all([
-            fetch("/products").then((r) => r.json()),
-            fetch("/trending").then((r) => r.json()),
-          ]);
-          const rows = [...a, ...b].sort((x, y) => x.id - y.id);
+          const rows = await api("/admin/products");
           $("#ptable").replaceChildren(
             ...(rows.length
-              ? rows.map((p) =>
-                  h(
+              ? rows.map((p) => {
+                  const badges = [];
+                  if (p.is_trending)
+                    badges.push(
+                      h("span", {
+                        className: "badge",
+                        textContent: "Trending",
+                      }),
+                    );
+                  if (p.is_sale)
+                    badges.push(
+                      h("span", {
+                        className: "badge sale",
+                        textContent: "Sale",
+                      }),
+                    );
+                  if (!badges.length)
+                    badges.push(
+                      h("span", { className: "mut", textContent: "Thường" }),
+                    );
+
+                  let priceTd;
+                  if (p.is_sale && p.discount_price) {
+                    priceTd = h(
+                      "td",
+                      {},
+                      h(
+                        "div",
+                        { style: "color: #d92d2d; font-weight: bold;" },
+                        p.discount_price.toLocaleString("vi-VN") + " ₫",
+                      ),
+                      h(
+                        "small",
+                        {
+                          style:
+                            "text-decoration: line-through; color: var(--mut);",
+                        },
+                        p.price.toLocaleString("vi-VN") + " ₫",
+                      ),
+                    );
+                  } else {
+                    priceTd = h("td", {
+                      textContent: p.price.toLocaleString("vi-VN") + " ₫",
+                    });
+                  }
+
+                  return h(
                     "tr",
                     {},
                     h("td", {}, thumb(p.image_url)),
                     h("td", { textContent: p.name }),
-                    h("td", {
-                      textContent: p.price.toLocaleString("vi-VN") + " ₫",
-                    }),
-                    h("td", {
-                      textContent: p.is_trending ? "Trending" : "Thường",
-                    }),
+                    priceTd,
+                    h("td", {}, ...badges),
                     h(
                       "td",
                       { className: "act" },
+                      h("button", {
+                        textContent: "Sửa",
+                        onclick: () => editProduct(p),
+                      }),
                       h("button", {
                         className: "danger",
                         textContent: "Xoá",
                         onclick: () => delProduct(p),
                       }),
                     ),
-                  ),
-                )
+                  );
+                })
               : [
                   h(
                     "tr",
@@ -531,23 +607,36 @@
           );
         });
       }
+
       $("#pform").onsubmit = (e) => {
         e.preventDefault();
         const d = new FormData(e.target);
-        run(async () => {
-          await api(
-            "/products",
-            json("POST", {
-              name: d.get("name").trim(),
-              price: parseFloat(d.get("price")),
-              image_url: d.get("image_url").trim(),
-              is_trending: d.has("is_trending"),
-            }),
-          );
-          $("#pdlg").close();
-          await loadProducts();
-        }, "Đã thêm sản phẩm");
+        const id = d.get("id");
+        const discountVal = d.get("discount_price");
+
+        const body = {
+          name: d.get("name").trim(),
+          price: parseFloat(d.get("price")),
+          discount_price: discountVal ? parseFloat(discountVal) : null,
+          is_sale: d.has("is_sale"),
+          image_url: d.get("image_url").trim(),
+          is_trending: d.has("is_trending"),
+        };
+
+        run(
+          async () => {
+            if (id) {
+              await api("/products/" + id, json("PATCH", body));
+            } else {
+              await api("/products", json("POST", body));
+            }
+            $("#pdlg").close();
+            await loadProducts();
+          },
+          id ? "Đã cập nhật sản phẩm" : "Đã thêm sản phẩm",
+        );
       };
+
       function delProduct(p) {
         if (!confirm('Xoá sản phẩm "' + p.name + '"?')) return;
         run(async () => {
@@ -556,7 +645,12 @@
         }, "Đã xoá sản phẩm");
       }
 
-      // ---------- Tài khoản ----------
+      // Tài khoản
+      $("#addu").onclick = () => {
+        $("#uform").reset();
+        $("#udlg").showModal();
+      };
+
       async function loadUsers() {
         await run(async () => {
           const us = await api("/admin/users");
@@ -587,14 +681,12 @@
                   h("button", {
                     textContent: u.is_admin ? "Bỏ admin" : "Cấp admin",
                     disabled: self,
-                    title: self ? "Không thể tự đổi quyền của mình" : "",
                     onclick: () => setAdmin(u, !u.is_admin),
                   }),
                   h("button", {
                     className: "danger",
                     textContent: "Xoá",
                     disabled: self,
-                    title: self ? "Không thể tự xoá tài khoản của mình" : "",
                     onclick: () => delUser(u),
                   }),
                 ),
@@ -603,6 +695,7 @@
           );
         });
       }
+
       $("#uform").onsubmit = (e) => {
         e.preventDefault();
         const d = new FormData(e.target);
@@ -620,6 +713,7 @@
           await loadUsers();
         }, "Đã thêm tài khoản");
       };
+
       function setAdmin(u, v) {
         run(
           async () => {
@@ -629,14 +723,20 @@
           v ? "Đã cấp quyền admin" : "Đã bỏ quyền admin",
         );
       }
+
       function resetPw(u) {
         const p = prompt("Mật khẩu mới cho " + u.email + " (8–72 ký tự):");
         if (!p) return;
+        if (p.length < 8 || p.length > 72) {
+          toast("Mật khẩu phải từ 8 đến 72 ký tự", true);
+          return;
+        }
         run(
           () => api("/admin/users/" + u.id, json("PATCH", { password: p })),
           "Đã đổi mật khẩu",
         );
       }
+
       function delUser(u) {
         if (!confirm("Xoá tài khoản " + u.email + "?")) return;
         run(async () => {
@@ -645,7 +745,7 @@
         }, "Đã xoá tài khoản");
       }
 
-      // ---------- Khởi động ----------
+      // Khởi động
       if (token)
         checkAdmin()
           .then((ok) => ok && show())

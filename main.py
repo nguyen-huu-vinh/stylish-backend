@@ -19,7 +19,6 @@ from models import ProductDB, UserDB
 Base.metadata.create_all(bind=engine)
 
 # ---------- Cấu hình bảo mật ----------
-# Đặt SECRET_KEY thật trong biến môi trường, ví dụ: openssl rand -hex 32
 SECRET_KEY = os.getenv("SECRET_KEY", "dev-only-change-me")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
@@ -27,7 +26,6 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login")
 
-# Hash giả để login tốn thời gian tương đương dù email không tồn tại
 DUMMY_HASH = pwd_context.hash("dummy-password")
 
 
@@ -38,14 +36,37 @@ async def lifespan(app: FastAPI):
     try:
         if db.query(ProductDB).count() == 0:
             db.add_all([
-                ProductDB(name="Áo thun trắng", price=199000, image_url="https://picsum.photos/id/1/300/300", is_trending=False),
-                ProductDB(name="Quần jeans", price=450000, image_url="https://picsum.photos/id/2/300/300", is_trending=False),
-                ProductDB(name="Váy hoa", price=320000, image_url="https://picsum.photos/id/3/300/300", is_trending=True),
-                ProductDB(name="Túi xách", price=280000, image_url="https://picsum.photos/id/4/300/300", is_trending=True),
+                ProductDB(
+                    name="Áo thun trắng",
+                    price=199000,
+                    image_url="https://picsum.photos/id/1/300/300",
+                    is_trending=False,
+                ),
+                ProductDB(
+                    name="Quần jeans",
+                    price=450000,
+                    discount_price=390000,
+                    is_sale=True,
+                    image_url="https://picsum.photos/id/2/300/300",
+                    is_trending=False,
+                ),
+                ProductDB(
+                    name="Váy hoa",
+                    price=320000,
+                    image_url="https://picsum.photos/id/3/300/300",
+                    is_trending=True,
+                ),
+                ProductDB(
+                    name="Túi xách",
+                    price=280000,
+                    discount_price=220000,
+                    is_sale=True,
+                    image_url="https://picsum.photos/id/4/300/300",
+                    is_trending=True,
+                ),
             ])
             db.commit()
 
-        # Tạo tài khoản admin đầu tiên từ biến môi trường (nếu có)
         admin_email = os.getenv("ADMIN_EMAIL")
         admin_password = os.getenv("ADMIN_PASSWORD")
         if admin_email and admin_password:
@@ -70,8 +91,19 @@ app = FastAPI(lifespan=lifespan)
 class ProductCreate(BaseModel):
     name: str
     price: float
+    discount_price: Optional[float] = None
+    is_sale: bool = False
     image_url: str
     is_trending: bool = False
+
+
+class ProductUpdate(BaseModel):
+    name: Optional[str] = None
+    price: Optional[float] = None
+    discount_price: Optional[float] = None
+    is_sale: Optional[bool] = None
+    image_url: Optional[str] = None
+    is_trending: Optional[bool] = None
 
 
 class ProductOut(ProductCreate):
@@ -154,7 +186,7 @@ def require_admin(user: UserDB = Depends(get_current_user)) -> UserDB:
     return user
 
 
-# ---------- Products ----------
+# ---------- Products API ----------
 @app.get("/products", response_model=list[ProductOut])
 def get_products(db: Session = Depends(get_db)):
     return db.query(ProductDB).filter(ProductDB.is_trending == False).all()
@@ -165,9 +197,22 @@ def get_trending(db: Session = Depends(get_db)):
     return db.query(ProductDB).filter(ProductDB.is_trending == True).all()
 
 
+@app.get("/sale", response_model=list[ProductOut])
+def get_sale_products(db: Session = Depends(get_db)):
+    return db.query(ProductDB).filter(ProductDB.is_sale == True).all()
+
+
+@app.get("/admin/products", response_model=list[ProductOut])
+def admin_get_all_products(
+    db: Session = Depends(get_db),
+    _admin: UserDB = Depends(require_admin),
+):
+    return db.query(ProductDB).order_by(ProductDB.id).all()
+
+
 @app.get("/products/{product_id}", response_model=ProductOut)
 def get_product(product_id: int, db: Session = Depends(get_db)):
-    product = db.query(ProductDB).filter(ProductDB.id == product_id).first()
+    product = db.get(ProductDB, product_id)
     if not product:
         raise HTTPException(status_code=404, detail="Không tìm thấy sản phẩm")
     return product
@@ -186,13 +231,33 @@ def create_product(
     return new_product
 
 
+@app.patch("/products/{product_id}", response_model=ProductOut)
+def update_product(
+    product_id: int,
+    data: ProductUpdate,
+    db: Session = Depends(get_db),
+    _admin: UserDB = Depends(require_admin),
+):
+    product = db.get(ProductDB, product_id)
+    if not product:
+        raise HTTPException(status_code=404, detail="Không tìm thấy sản phẩm")
+
+    update_data = data.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(product, key, value)
+
+    db.commit()
+    db.refresh(product)
+    return product
+
+
 @app.delete("/products/{product_id}")
 def delete_product(
     product_id: int,
     db: Session = Depends(get_db),
     _admin: UserDB = Depends(require_admin),
 ):
-    product = db.query(ProductDB).filter(ProductDB.id == product_id).first()
+    product = db.get(ProductDB, product_id)
     if not product:
         raise HTTPException(status_code=404, detail="Không tìm thấy sản phẩm")
     db.delete(product)
@@ -200,17 +265,16 @@ def delete_product(
     return {"message": "Đã xóa sản phẩm"}
 
 
-# ---------- Admin: trang quản trị ----------
+# ---------- Admin: Trang quản trị ----------
 ADMIN_PAGE = Path(__file__).parent / "admin.html"
 
 
 @app.get("/admin", include_in_schema=False)
 def admin_page():
-    # Chỉ trả về giao diện; mọi thao tác dữ liệu đều qua API cần token admin
     return FileResponse(ADMIN_PAGE)
 
 
-# ---------- Admin: quản lý tài khoản ----------
+# ---------- Admin: Quản lý tài khoản ----------
 @app.get("/admin/users", response_model=list[UserOut])
 def admin_list_users(
     db: Session = Depends(get_db),
@@ -282,6 +346,11 @@ def admin_delete_user(
 
 
 # ---------- Auth ----------
+@app.get("/me", response_model=UserOut)
+def read_me(current_user: UserDB = Depends(get_current_user)):
+    return current_user
+
+
 @app.post("/register", response_model=UserOut, status_code=201)
 def register(user: UserRegister, db: Session = Depends(get_db)):
     email = user.email.lower().strip()
@@ -309,7 +378,6 @@ def login(
     form: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db),
 ):
-    # OAuth2 form dùng trường "username", ở đây nó chứa email
     email = form.username.lower().strip()
     user = db.query(UserDB).filter(UserDB.email == email).first()
 
@@ -323,8 +391,3 @@ def login(
             headers={"WWW-Authenticate": "Bearer"},
         )
     return Token(access_token=create_access_token(user.id))
-
-
-@app.get("/me", response_model=UserOut)
-def read_me(current_user: UserDB = Depends(get_current_user)):
-    return current_user
