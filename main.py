@@ -5,26 +5,33 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, FileResponse
 from pydantic import BaseModel
-from sqlalchemy import create_engine, Column, Integer, String, Float, Boolean
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy import Column, Integer, String, Float, Boolean
+from sqlalchemy.orm import Session
 from passlib.context import CryptContext
 from datetime import datetime, timedelta
 from jose import JWTError, jwt
 
-# --- CẤU HÌNH DATABASE ---
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./app.db")
-if DATABASE_URL.startswith("postgres://"):
-    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
-
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False} if "sqlite" in DATABASE_URL else {})
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-Base = declarative_base()
+# --- DÙNG CHUNG CẤU HÌNH DATABASE TỪ database.py ---
+# (Trước đây main.py tự tạo engine/Base riêng, khác với database.py —
+#  điều này khiến 2 file trỏ tới 2 "MetaData" khác nhau và có thể tạo
+#  bảng ở một DB nhưng lại đọc/ghi vào DB khác khi deploy. Import chung
+#  1 nguồn duy nhất để tránh lệch dữ liệu.)
+from database import engine, SessionLocal, Base
 
 # --- CẤU HÌNH JWT & BẢO MẬT ---
-SECRET_KEY = "supersecretkey_change_me_in_production"
+# SECRET_KEY BẮT BUỘC lấy từ biến môi trường. Không hardcode trong source
+# vì bất kỳ ai đọc được code (repo public, log, v.v.) cũng có thể tự ký
+# token admin giả. Đặt biến môi trường SECRET_KEY trên Render / máy local
+# (ví dụ: export SECRET_KEY="chuỗi-ngẫu-nhiên-dài-và-khó-đoán").
+SECRET_KEY = os.getenv("SECRET_KEY")
+if not SECRET_KEY:
+    raise RuntimeError(
+        "Thiếu biến môi trường SECRET_KEY. Hãy đặt SECRET_KEY trước khi chạy server "
+        "(ví dụ: export SECRET_KEY=$(openssl rand -hex 32))."
+    )
+
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 # 1 ngày
+ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 1 ngày
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
@@ -32,7 +39,7 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 # --- MODEL CƠ SỞ DỮ LIỆU ---
 class User(Base):
     __tablename__ = "users"
-    id = Column(Integer, primary_primary_key=True, index=True) if hasattr(Column, "primary_primary_key") else Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True, index=True)
     email = Column(String, unique=True, index=True, nullable=False)
     hashed_password = Column(String, nullable=False)
     full_name = Column(String, nullable=True)
@@ -75,10 +82,14 @@ class ProductSchema(BaseModel):
 # --- APP FASTAPI ---
 app = FastAPI(title="E-Commerce API")
 
+# CORS: liệt kê rõ domain được phép gọi API (thay "*" bằng domain thật của
+# admin panel / web nếu có). Giữ "*" tạm thời cho Flutter mobile (không có
+# "origin" trình duyệt) nhưng KHÔNG dùng allow_credentials=True cùng "*"
+# vì tổ hợp này không an toàn và nhiều trình duyệt sẽ tự chặn.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -122,17 +133,28 @@ def get_current_admin(current_user: User = Depends(get_current_user)):
         raise HTTPException(status_code=403, detail="Bạn không có quyền Admin")
     return current_user
 
-# Tạo sẵn tài khoản Admin mặc định nếu chưa có
+# Tạo sẵn tài khoản Admin mặc định nếu chưa có.
+# Lấy email/mật khẩu admin từ biến môi trường ADMIN_EMAIL / ADMIN_PASSWORD
+# nếu có; nếu không, dùng giá trị mặc định (chỉ nên dùng khi chạy local).
 @app.on_event("startup")
 def startup_db_check():
     db = SessionLocal()
-    admin = db.query(User).filter(User.email == "admin@gmail.com").first()
+    admin_email = os.getenv("ADMIN_EMAIL", "admin@gmail.com")
+    admin_password = os.getenv("ADMIN_PASSWORD", "Admin123456")
+    if not os.getenv("ADMIN_EMAIL") or not os.getenv("ADMIN_PASSWORD"):
+        print(
+            "[CẢNH BÁO] Đang dùng tài khoản admin mặc định "
+            f"({admin_email}). Đặt biến môi trường ADMIN_EMAIL và "
+            "ADMIN_PASSWORD để dùng thông tin đăng nhập riêng khi deploy thật."
+        )
+
+    admin = db.query(User).filter(User.email == admin_email).first()
     if not admin:
         admin_user = User(
-            email="admin@gmail.com",
-            hashed_password=get_password_hash("Admin123456"),
+            email=admin_email,
+            hashed_password=get_password_hash(admin_password),
             full_name="Administrator",
-            is_admin=True
+            is_admin=True,
         )
         db.add(admin_user)
         db.commit()
@@ -151,12 +173,15 @@ def register(user_data: UserRegister, db: Session = Depends(get_db)):
     existing = db.query(User).filter(User.email == user_data.email).first()
     if existing:
         raise HTTPException(status_code=400, detail="Email này đã được sử dụng!")
-    
+
+    if len(user_data.password) < 6:
+        raise HTTPException(status_code=400, detail="Mật khẩu phải có ít nhất 6 ký tự!")
+
     new_user = User(
         email=user_data.email,
         hashed_password=get_password_hash(user_data.password),
         full_name=user_data.full_name,
-        is_admin=False
+        is_admin=False,
     )
     db.add(new_user)
     db.commit()
@@ -168,7 +193,7 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
     user = db.query(User).filter(User.email == form_data.username).first()
     if not user or not verify_password(form_data.password, user.hashed_password):
         raise HTTPException(status_code=400, detail="Email hoặc mật khẩu không chính xác")
-    
+
     access_token = create_access_token(data={"sub": user.email})
     return {"access_token": access_token, "token_type": "bearer", "is_admin": user.is_admin}
 
@@ -182,12 +207,15 @@ def create_user_by_admin(user_data: UserRegister, db: Session = Depends(get_db),
     existing = db.query(User).filter(User.email == user_data.email).first()
     if existing:
         raise HTTPException(status_code=400, detail="Email đã tồn tại!")
-    
+
+    if len(user_data.password) < 6:
+        raise HTTPException(status_code=400, detail="Mật khẩu phải có ít nhất 6 ký tự!")
+
     user = User(
         email=user_data.email,
         hashed_password=get_password_hash(user_data.password),
         full_name=user_data.full_name,
-        is_admin=False
+        is_admin=False,
     )
     db.add(user)
     db.commit()
@@ -198,11 +226,17 @@ def update_user(user_id: int, user_data: UserUpdate, db: Session = Depends(get_d
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="Không tìm thấy tài khoản")
-    
+
+    if user_data.email is not None and user_data.email != user.email:
+        # Kiểm tra email mới có bị trùng với người khác không, tránh lỗi
+        # IntegrityError không rõ nguyên nhân khi commit.
+        dup = db.query(User).filter(User.email == user_data.email).first()
+        if dup:
+            raise HTTPException(status_code=400, detail="Email này đã được người khác sử dụng!")
+        user.email = user_data.email
+
     if user_data.full_name is not None:
         user.full_name = user_data.full_name
-    if user_data.email is not None:
-        user.email = user_data.email
     if user_data.is_admin is not None:
         user.is_admin = user_data.is_admin
 
@@ -216,7 +250,7 @@ def delete_user(user_id: int, db: Session = Depends(get_db), current_admin: User
         raise HTTPException(status_code=404, detail="Không tìm thấy tài khoản")
     if user.id == current_admin.id:
         raise HTTPException(status_code=400, detail="Không thể xóa tài khoản Admin đang đăng nhập!")
-    
+
     db.delete(user)
     db.commit()
     return {"message": "Đã xóa tài khoản thành công"}

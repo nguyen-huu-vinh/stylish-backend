@@ -356,8 +356,8 @@
               type="email"
               id="email"
               class="form-control"
-              value="admin@gmail.com"
               placeholder="admin@gmail.com"
+              autocomplete="username"
             />
           </div>
         </div>
@@ -370,8 +370,8 @@
               type="password"
               id="password"
               class="form-control"
-              value="Admin123456"
               placeholder="••••••••"
+              autocomplete="current-password"
             />
           </div>
         </div>
@@ -594,6 +594,21 @@
       let token = localStorage.getItem("admin_token");
       if (token) showAdminSection();
 
+      // Escape chuỗi trước khi chèn vào innerHTML để tránh XSS
+      // (tên sản phẩm / họ tên / email đều do người dùng nhập qua API,
+      // nếu chèn thẳng vào innerHTML mà không escape thì ai đó có thể
+      // đăng ký với full_name chứa <script>/<img onerror=...> và chạy
+      // mã tùy ý trong trình duyệt admin, kèm quyền đọc token admin).
+      function escapeHtml(str) {
+        if (str === null || str === undefined) return "";
+        return String(str)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&#039;");
+      }
+
       async function login() {
         const email = document.getElementById("email").value;
         const password = document.getElementById("password").value;
@@ -668,10 +683,13 @@
           if (!badges)
             badges = '<span class="badge badge-secondary">Thường</span>';
 
+          const safeImg = escapeHtml(p.image_url || "");
+          const safeName = escapeHtml(p.name);
+
           tbody.innerHTML += `
                     <tr>
-                        <td><img src="${p.image_url}" class="product-img" onerror="this.src='https://via.placeholder.com/44'"></td>
-                        <td><strong>${p.name}</strong></td>
+                        <td><img src="${safeImg}" class="product-img" onerror="this.src='https://via.placeholder.com/44'"></td>
+                        <td><strong>${safeName}</strong></td>
                         <td>${p.price.toLocaleString()}đ</td>
                         <td>${p.discount_price ? '<strong style="color:var(--danger);">' + p.discount_price.toLocaleString() + "đ</strong>" : "-"}</td>
                         <td>${badges}</td>
@@ -686,12 +704,17 @@
       }
 
       async function createProduct() {
+        const priceValue = parseFloat(document.getElementById("price").value);
+        if (Number.isNaN(priceValue)) {
+          alert("Vui lòng nhập giá gốc hợp lệ!");
+          return;
+        }
+
+        const discountRaw = document.getElementById("discount_price").value;
         const data = {
           name: document.getElementById("name").value,
-          price: parseFloat(document.getElementById("price").value),
-          discount_price: document.getElementById("discount_price").value
-            ? parseFloat(document.getElementById("discount_price").value)
-            : null,
+          price: priceValue,
+          discount_price: discountRaw ? parseFloat(discountRaw) : null,
           image_url: document.getElementById("image_url").value,
           is_sale: document.getElementById("is_sale").checked,
           is_trending: document.getElementById("is_trending").checked,
@@ -710,7 +733,8 @@
           alert("Đã thêm sản phẩm thành công!");
           loadProducts();
         } else {
-          alert("Không thể thêm sản phẩm!");
+          const err = await res.json().catch(() => ({}));
+          alert(err.detail || "Không thể thêm sản phẩm!");
         }
       }
 
@@ -739,14 +763,26 @@
             ? '<span class="badge badge-success"><i class="fa-solid fa-shield"></i> Admin</span>'
             : '<span class="badge badge-secondary">Khách hàng</span>';
 
+          const safeFullName = escapeHtml(u.full_name || "Chưa đặt tên");
+          const safeEmail = escapeHtml(u.email);
+
+          // Dùng data-* attribute + dataset thay vì nhúng thẳng chuỗi vào
+          // onclick="editUser('...')" — cách cũ sẽ vỡ (lỗi cú pháp JS) nếu
+          // full_name hoặc email chứa dấu nháy đơn, ví dụ "O'Brien".
           tbody.innerHTML += `
                     <tr>
                         <td>#${u.id}</td>
-                        <td><strong>${u.full_name || "Chưa đặt tên"}</strong></td>
-                        <td>${u.email}</td>
+                        <td><strong>${safeFullName}</strong></td>
+                        <td>${safeEmail}</td>
                         <td>${roleBadge}</td>
                         <td>
-                            <button class="btn-action btn-toggle" onclick="editUser(${u.id}, '${u.full_name || ""}', '${u.email}', ${u.is_admin})">
+                            <button
+                              class="btn-action btn-toggle edit-user-btn"
+                              data-id="${u.id}"
+                              data-fullname="${escapeHtml(u.full_name || "")}"
+                              data-email="${safeEmail}"
+                              data-isadmin="${u.is_admin}"
+                            >
                                 <i class="fa-solid fa-pen-to-square"></i> Sửa
                             </button>
                             <button class="btn-action btn-delete" onclick="deleteUser(${u.id})">
@@ -755,6 +791,18 @@
                         </td>
                     </tr>
                 `;
+        });
+
+        // Gắn listener sau khi render xong thay vì inline onclick với chuỗi nội suy
+        document.querySelectorAll(".edit-user-btn").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            editUser(
+              btn.dataset.id,
+              btn.dataset.fullname,
+              btn.dataset.email,
+              btn.dataset.isadmin === "true",
+            );
+          });
         });
       }
 
@@ -783,7 +831,10 @@
             alert("Cập nhật tài khoản thành công!");
             resetUserForm();
             loadUsers();
-          } else alert("Lỗi khi cập nhật!");
+          } else {
+            const err = await res.json().catch(() => ({}));
+            alert(err.detail || "Lỗi khi cập nhật!");
+          }
         } else {
           // Thêm mới User
           if (!email || !password)
@@ -806,7 +857,7 @@
             resetUserForm();
             loadUsers();
           } else {
-            const err = await res.json();
+            const err = await res.json().catch(() => ({}));
             alert(err.detail || "Không thể tạo tài khoản!");
           }
         }
@@ -838,7 +889,7 @@
 
         if (res.ok) loadUsers();
         else {
-          const err = await res.json();
+          const err = await res.json().catch(() => ({}));
           alert(err.detail || "Không thể xóa!");
         }
       }
