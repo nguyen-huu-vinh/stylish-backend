@@ -6,11 +6,10 @@ import requests
 
 BASE_URL = "https://stylish-backend-lyrx.onrender.com"
 
-# Lấy thông tin admin từ biến môi trường, nếu không có thì hỏi khi chạy
 email = os.getenv("ADMIN_EMAIL") or input("Admin email: ")
 password = os.getenv("ADMIN_PASSWORD") or getpass.getpass("Admin password: ")
 
-# 1. Đăng nhập để lấy token (Render free có thể mất ~50s để "thức dậy")
+# 1. Đăng nhập (Render free có thể mất ~50s để "thức dậy")
 login = requests.post(
     f"{BASE_URL}/login",
     data={"username": email, "password": password},  # form, không phải JSON
@@ -23,19 +22,35 @@ if login.status_code != 200:
 headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
 
 # 2. Import sản phẩm từ CSV
+ok, failed = 0, 0
 with open("products.csv", encoding="utf-8") as f:
     reader = csv.DictReader(f)
-    for row in reader:
-        payload = {
-            "name": row["name"],
-            "price": float(row["price"]),
-            "image_url": row["image_url"],
-            "is_trending": row["is_trending"].strip().lower() == "true",
-        }
+    for line_no, row in enumerate(reader, start=2):  # dòng 1 là header
+        try:
+            payload = {
+                "name": row["name"].strip(),
+                "price": float(row["price"]),
+                "image_url": row["image_url"].strip(),
+                "is_trending": row["is_trending"].strip().lower() == "true",
+            }
+            if not payload["image_url"]:
+                raise ValueError("thiếu image_url")
+        except (KeyError, ValueError) as e:
+            print(f"Dòng {line_no}: bỏ qua ({e})")
+            failed += 1
+            continue
+
         response = requests.post(
             f"{BASE_URL}/products",
             json=payload,
             headers=headers,
             timeout=30,
         )
-        print(row["name"], "→", response.status_code)
+        print(payload["name"], "→", response.status_code)
+        if response.status_code >= 400:
+            print("   ", response.text)
+            failed += 1
+        else:
+            ok += 1
+
+print(f"\nXong: {ok} thành công, {failed} lỗi")

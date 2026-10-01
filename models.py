@@ -22,3 +22,8 @@ class UserDB(Base):
     hashed_password = Column(String, nullable=False)
     full_name = Column(String, nullable=True)
     is_admin = Column(Boolean, default=False)
+
+
+# Alias để các router dùng tên ngắn
+Product = ProductDB
+User = UserDB
