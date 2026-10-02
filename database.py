@@ -44,6 +44,13 @@ def ensure_product_category_schema():
             connection.execute(
                 text("ALTER TABLE products ADD COLUMN description VARCHAR")
             )
+        if "is_deal_of_the_day" not in columns:
+            connection.execute(
+                text(
+                    "ALTER TABLE products ADD COLUMN "
+                    "is_deal_of_the_day BOOLEAN DEFAULT FALSE"
+                )
+            )
         if "is_new" not in columns:
             connection.execute(
                 text("ALTER TABLE products ADD COLUMN is_new BOOLEAN DEFAULT FALSE")

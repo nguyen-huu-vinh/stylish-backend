@@ -22,6 +22,7 @@ class ProductDB(Base):
     discount_price = Column(Float, nullable=True)
     description = Column(String, nullable=True)
     is_sale = Column(Boolean, default=False)
+    is_deal_of_the_day = Column(Boolean, default=False)
     is_new = Column(Boolean, default=False)
     image_url = Column(String, nullable=False)
     is_trending = Column(Boolean, default=False)

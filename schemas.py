@@ -1,5 +1,5 @@
 from typing import Optional
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, model_validator
 
 
 class UserRegister(BaseModel):
@@ -51,8 +51,21 @@ class ProductSchema(BaseModel):
     discount_price: Optional[float] = None
     image_url: str
     is_sale: bool = False
+    is_deal_of_the_day: bool = False
     is_trending: bool = False
     is_new: bool = False
+
+    @model_validator(mode="after")
+    def validate_deal_of_the_day(self):
+        has_reduced_price = (
+            self.discount_price is not None
+            and self.discount_price < self.price
+        )
+        if self.is_deal_of_the_day and not (self.is_sale or has_reduced_price):
+            raise ValueError(
+                "Deal of the Day cần bật Sale hoặc có giá giảm thấp hơn giá gốc"
+            )
+        return self
 
     class Config:
         model_config = {"from_attributes": True}

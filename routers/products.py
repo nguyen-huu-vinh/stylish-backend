@@ -19,6 +19,7 @@ def _product_response(product: Product):
         "discount_price": product.discount_price,
         "description": product.description,
         "is_sale": product.is_sale,
+        "is_deal_of_the_day": product.is_deal_of_the_day,
         "is_new": product.is_new,
         "image_url": product.image_url,
         "is_trending": product.is_trending,
@@ -55,6 +56,12 @@ def get_sale_products(db: Session = Depends(get_db)):
             & (Product.discount_price < Product.price)
         )
     ).all()
+    return [_product_response(product) for product in products]
+
+
+@router.get("/deals-of-the-day")
+def get_deals_of_the_day(db: Session = Depends(get_db)):
+    products = db.query(Product).filter(Product.is_deal_of_the_day == True).all()
     return [_product_response(product) for product in products]
 
 

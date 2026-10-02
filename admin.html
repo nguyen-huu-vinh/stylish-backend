@@ -729,6 +729,10 @@
                 (Sale)</label
               >
               <label class="checkbox-label"
+                ><input type="checkbox" id="is_deal_of_the_day" /> Deal of the
+                Day</label
+              >
+              <label class="checkbox-label"
                 ><input type="checkbox" id="is_trending" /> Sản Phẩm Nổi Bật
                 (Trending)</label
               >
@@ -983,6 +987,8 @@
           let badges = "";
           if (p.is_sale)
             badges += '<span class="badge badge-gold">Sale</span> ';
+          if (p.is_deal_of_the_day)
+            badges += '<span class="badge badge-gold">Deal of the Day</span> ';
           if (p.is_trending)
             badges += '<span class="badge badge-brick">Trending</span> ';
           if (p.is_new) badges += '<span class="badge badge-quiet">New</span>';
@@ -1048,9 +1054,21 @@
             document.getElementById("description").value.trim() || null,
           image_url: imageUrl,
           is_sale: document.getElementById("is_sale").checked,
+          is_deal_of_the_day:
+            document.getElementById("is_deal_of_the_day").checked,
           is_trending: document.getElementById("is_trending").checked,
           is_new: document.getElementById("is_new").checked,
         };
+        if (
+          data.is_deal_of_the_day &&
+          !data.is_sale &&
+          !(data.discount_price !== null && data.discount_price < data.price)
+        ) {
+          alert(
+            "Deal of the Day cần bật Sale hoặc có giá giảm thấp hơn giá gốc!",
+          );
+          return;
+        }
 
         const isEditing = editingProductId !== null;
         const res = await fetch(
@@ -1094,6 +1112,9 @@
           product.description || "";
         document.getElementById("category").value = product.category_id ?? "";
         document.getElementById("is_sale").checked = Boolean(product.is_sale);
+        document.getElementById("is_deal_of_the_day").checked = Boolean(
+          product.is_deal_of_the_day,
+        );
         document.getElementById("is_trending").checked = Boolean(
           product.is_trending,
         );
@@ -1121,6 +1142,7 @@
         document.getElementById("description").value = "";
         document.getElementById("category").value = "";
         document.getElementById("is_sale").checked = false;
+        document.getElementById("is_deal_of_the_day").checked = false;
         document.getElementById("is_trending").checked = false;
         document.getElementById("is_new").checked = false;
         document.getElementById("product-form-title").textContent =

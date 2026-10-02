@@ -42,6 +42,9 @@ with open("products.csv", encoding="utf-8") as f:
                 else None
             ),
             "is_sale": row.get("is_sale", "false").strip().lower() == "true",
+            "is_deal_of_the_day": row.get(
+                "is_deal_of_the_day", "false"
+            ).strip().lower() == "true",
             "is_trending": row["is_trending"].strip().lower() == "true",
             "is_new": row.get("is_new", "false").strip().lower() == "true",
             "category_id": category_ids[row["category"].strip().casefold()],
