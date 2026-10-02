@@ -87,7 +87,7 @@ def forgot_password(request: ForgotPasswordRequest, db: Session = Depends(get_db
     message = "Nếu email đã đăng ký, mã OTP sẽ được gửi đến email đó."
     user = db.query(User).filter(User.email == request.email).first()
     if user is None:
-        return {"message": message}
+        raise HTTPException(status_code=404, detail="Email chưa được đăng ký")
 
     now = datetime.utcnow()
     reset_record = (
@@ -121,6 +121,10 @@ def forgot_password(request: ForgotPasswordRequest, db: Session = Depends(get_db
         logger.exception("Unable to send password reset OTP through Mailtrap")
         db.delete(reset_record)
         db.commit()
+        raise HTTPException(
+            status_code=503,
+            detail="Không thể gửi OTP lúc này. Vui lòng thử lại sau.",
+        )
 
     return {"message": message}
 
