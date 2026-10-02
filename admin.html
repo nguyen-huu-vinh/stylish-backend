@@ -666,8 +666,10 @@
 
           <div class="card">
             <div class="card-title">
-              <i class="fa-solid fa-plus-circle"></i> Thêm Sản Phẩm Mới
+              <i class="fa-solid fa-plus-circle"></i>
+              <span id="product-form-title">Thêm Sản Phẩm Mới</span>
             </div>
+            <input type="hidden" id="product-id-edit" />
             <div class="form-grid">
               <div>
                 <label class="field-label-sm">Tên sản phẩm</label>
@@ -711,6 +713,15 @@
                   <option value="">Chọn danh mục</option>
                 </select>
               </div>
+              <div>
+                <label class="field-label-sm">Mô tả</label>
+                <textarea
+                  id="description"
+                  class="input-simple"
+                  rows="3"
+                  placeholder="Mô tả sản phẩm..."
+                ></textarea>
+              </div>
             </div>
             <div class="checkbox-group">
               <label class="checkbox-label"
@@ -721,14 +732,25 @@
                 ><input type="checkbox" id="is_trending" /> Sản Phẩm Nổi Bật
                 (Trending)</label
               >
+              <label class="checkbox-label"
+                ><input type="checkbox" id="is_new" /> Sản phẩm mới (New)</label
+              >
             </div>
             <div class="actions-row">
               <button
+                id="save-product-button"
                 onclick="createProduct()"
                 class="btn btn-brick"
                 style="padding: 10px 22px"
               >
                 <i class="fa-solid fa-floppy-disk"></i> Lưu Sản Phẩm
+              </button>
+              <button
+                id="cancel-product-edit"
+                onclick="resetProductForm()"
+                class="btn btn-ghost hidden"
+              >
+                Hủy sửa
               </button>
             </div>
           </div>
@@ -842,6 +864,8 @@
 
     <script>
       let token = localStorage.getItem("admin_token");
+      let editingProductId = null;
+      let productsById = new Map();
       if (token) showAdminSection();
 
       // Escape chuỗi trước khi chèn vào innerHTML để tránh XSS
@@ -939,6 +963,9 @@
         const products = await res.json();
         const tbody = document.getElementById("product-list");
         tbody.innerHTML = "";
+        productsById = new Map(
+          products.map((product) => [product.id, product]),
+        );
 
         document.getElementById("stat-total-products").textContent =
           products.length;
@@ -957,7 +984,8 @@
           if (p.is_sale)
             badges += '<span class="badge badge-gold">Sale</span> ';
           if (p.is_trending)
-            badges += '<span class="badge badge-brick">Trending</span>';
+            badges += '<span class="badge badge-brick">Trending</span> ';
+          if (p.is_new) badges += '<span class="badge badge-quiet">New</span>';
           if (!badges) badges = '<span class="badge badge-quiet">Thường</span>';
 
           const safeImg = escapeHtml(p.image_url || "");
@@ -973,6 +1001,9 @@
                         <td>${p.discount_price ? '<strong style="color:var(--brick-deep);">' + p.discount_price.toLocaleString() + "đ</strong>" : "-"}</td>
                         <td>${badges}</td>
                         <td>
+                          <button class="btn-action btn-toggle" onclick="editProduct(${p.id})">
+                            <i class="fa-solid fa-pen-to-square"></i> Sửa
+                          </button>
                             <button class="btn-action btn-delete" onclick="deleteProduct(${p.id})">
                                 <i class="fa-solid fa-trash"></i> Xóa
                             </button>
@@ -983,9 +1014,19 @@
       }
 
       async function createProduct() {
+        const name = document.getElementById("name").value.trim();
+        const imageUrl = document.getElementById("image_url").value.trim();
         const priceValue = parseFloat(document.getElementById("price").value);
+        if (!name) {
+          alert("Vui lòng nhập tên sản phẩm!");
+          return;
+        }
         if (Number.isNaN(priceValue)) {
           alert("Vui lòng nhập giá gốc hợp lệ!");
+          return;
+        }
+        if (!imageUrl) {
+          alert("Vui lòng nhập URL hình ảnh!");
           return;
         }
         const categoryId = parseInt(
@@ -999,31 +1040,94 @@
 
         const discountRaw = document.getElementById("discount_price").value;
         const data = {
-          name: document.getElementById("name").value,
+          name,
           price: priceValue,
           category_id: categoryId,
           discount_price: discountRaw ? parseFloat(discountRaw) : null,
-          image_url: document.getElementById("image_url").value,
+          description:
+            document.getElementById("description").value.trim() || null,
+          image_url: imageUrl,
           is_sale: document.getElementById("is_sale").checked,
           is_trending: document.getElementById("is_trending").checked,
+          is_new: document.getElementById("is_new").checked,
         };
 
-        const res = await fetch("/products", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
+        const isEditing = editingProductId !== null;
+        const res = await fetch(
+          isEditing ? `/products/${editingProductId}` : "/products",
+          {
+            method: isEditing ? "PUT" : "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify(data),
           },
-          body: JSON.stringify(data),
-        });
+        );
 
         if (res.ok) {
-          alert("Đã thêm sản phẩm thành công!");
-          loadProducts();
+          alert(
+            isEditing
+              ? "Đã cập nhật sản phẩm!"
+              : "Đã thêm sản phẩm thành công!",
+          );
+          resetProductForm();
+          await loadProducts();
         } else {
           const err = await res.json().catch(() => ({}));
           alert(err.detail || "Không thể thêm sản phẩm!");
         }
+      }
+
+      function editProduct(id) {
+        const product = productsById.get(id);
+        if (!product) return;
+
+        editingProductId = id;
+        document.getElementById("product-id-edit").value = id;
+        document.getElementById("name").value = product.name || "";
+        document.getElementById("price").value = product.price ?? "";
+        document.getElementById("discount_price").value =
+          product.discount_price ?? "";
+        document.getElementById("image_url").value = product.image_url || "";
+        document.getElementById("description").value =
+          product.description || "";
+        document.getElementById("category").value = product.category_id ?? "";
+        document.getElementById("is_sale").checked = Boolean(product.is_sale);
+        document.getElementById("is_trending").checked = Boolean(
+          product.is_trending,
+        );
+        document.getElementById("is_new").checked = Boolean(product.is_new);
+        document.getElementById("product-form-title").textContent =
+          `Sửa sản phẩm #${id}`;
+        document.getElementById("save-product-button").innerHTML =
+          '<i class="fa-solid fa-floppy-disk"></i> Cập nhật sản phẩm';
+        document
+          .getElementById("cancel-product-edit")
+          .classList.remove("hidden");
+        document
+          .getElementById("name")
+          .scrollIntoView({ behavior: "smooth", block: "center" });
+        document.getElementById("name").focus();
+      }
+
+      function resetProductForm() {
+        editingProductId = null;
+        document.getElementById("product-id-edit").value = "";
+        document.getElementById("name").value = "";
+        document.getElementById("price").value = "";
+        document.getElementById("discount_price").value = "";
+        document.getElementById("image_url").value = "";
+        document.getElementById("description").value = "";
+        document.getElementById("category").value = "";
+        document.getElementById("is_sale").checked = false;
+        document.getElementById("is_trending").checked = false;
+        document.getElementById("is_new").checked = false;
+        document.getElementById("product-form-title").textContent =
+          "Thêm Sản Phẩm Mới";
+        document.getElementById("save-product-button").innerHTML =
+          '<i class="fa-solid fa-floppy-disk"></i> Lưu Sản Phẩm';
+        document.getElementById("cancel-product-edit").classList.add("hidden");
       }
 
       async function deleteProduct(id) {

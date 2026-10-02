@@ -35,7 +35,15 @@ with open("products.csv", encoding="utf-8") as f:
             "name": row["name"],
             "price": float(row["price"]),
             "image_url": row["image_url"],
+            "description": row.get("description", "").strip() or None,
+            "discount_price": (
+                float(row["discount_price"])
+                if row.get("discount_price", "").strip()
+                else None
+            ),
+            "is_sale": row.get("is_sale", "false").strip().lower() == "true",
             "is_trending": row["is_trending"].strip().lower() == "true",
+            "is_new": row.get("is_new", "false").strip().lower() == "true",
             "category_id": category_ids[row["category"].strip().casefold()],
         }
         r = requests.post(f"{BASE_URL}/products", json=payload,

@@ -40,6 +40,14 @@ def ensure_product_category_schema():
                     "REFERENCES categories(id)"
                 )
             )
+        if "description" not in columns:
+            connection.execute(
+                text("ALTER TABLE products ADD COLUMN description VARCHAR")
+            )
+        if "is_new" not in columns:
+            connection.execute(
+                text("ALTER TABLE products ADD COLUMN is_new BOOLEAN DEFAULT FALSE")
+            )
 
     product_columns = {
         column["name"]

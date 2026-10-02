@@ -47,10 +47,12 @@ class ProductSchema(BaseModel):
     name: str
     price: float
     category_id: int
+    description: Optional[str] = None
     discount_price: Optional[float] = None
-    image_url: Optional[str] = None
+    image_url: str
     is_sale: bool = False
     is_trending: bool = False
+    is_new: bool = False
 
     class Config:
         model_config = {"from_attributes": True}

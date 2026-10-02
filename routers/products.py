@@ -17,7 +17,9 @@ def _product_response(product: Product):
         "name": product.name,
         "price": product.price,
         "discount_price": product.discount_price,
+        "description": product.description,
         "is_sale": product.is_sale,
+        "is_new": product.is_new,
         "image_url": product.image_url,
         "is_trending": product.is_trending,
         "category_id": product.category_id,
@@ -44,6 +46,24 @@ def get_trending_products(db: Session = Depends(get_db)):
     return [_product_response(product) for product in products]
 
 
+@router.get("/sale")
+def get_sale_products(db: Session = Depends(get_db)):
+    products = db.query(Product).filter(
+        (Product.is_sale == True)
+        | (
+            (Product.discount_price.isnot(None))
+            & (Product.discount_price < Product.price)
+        )
+    ).all()
+    return [_product_response(product) for product in products]
+
+
+@router.get("/new-arrivals")
+def get_new_products(db: Session = Depends(get_db)):
+    products = db.query(Product).filter(Product.is_new == True).all()
+    return [_product_response(product) for product in products]
+
+
 @router.get("/products/{product_id}")
 def get_product_detail(product_id: int, db: Session = Depends(get_db)):
     product = db.query(Product).filter(Product.id == product_id).first()
@@ -62,6 +82,26 @@ def create_product(product: ProductSchema, db: Session = Depends(get_db),
     db.commit()
     db.refresh(new_p)
     return _product_response(new_p)
+
+
+@router.put("/products/{product_id}")
+def update_product(
+    product_id: int,
+    product_data: ProductSchema,
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(get_current_admin),
+):
+    product = db.query(Product).filter(Product.id == product_id).first()
+    if not product:
+        raise HTTPException(status_code=404, detail="Không tìm thấy sản phẩm")
+    if not db.query(Category).filter(Category.id == product_data.category_id).first():
+        raise HTTPException(status_code=404, detail="Không tìm thấy danh mục")
+
+    for field, value in product_data.model_dump().items():
+        setattr(product, field, value)
+    db.commit()
+    db.refresh(product)
+    return _product_response(product)
 
 
 @router.delete("/products/{product_id}")
