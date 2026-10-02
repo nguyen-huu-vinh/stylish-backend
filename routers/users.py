@@ -49,6 +49,10 @@ def update_user(user_id: int, user_data: UserUpdate, db: Session = Depends(get_d
         user.full_name = user_data.full_name
     if user_data.is_admin is not None:
         user.is_admin = user_data.is_admin
+    if user_data.password is not None:
+        if len(user_data.password) < 6:
+            raise HTTPException(status_code=400, detail="Mật khẩu phải có ít nhất 6 ký tự!")
+        user.hashed_password = get_password_hash(user_data.password)
 
     db.commit()
     return {"message": "Cập nhật tài khoản thành công"}

@@ -1,4 +1,6 @@
-from sqlalchemy import Column, Integer, String, Float, Boolean
+from datetime import datetime
+
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Float, Boolean
 from database import Base
 
 
@@ -24,6 +26,18 @@ class UserDB(Base):
     is_admin = Column(Boolean, default=False)
 
 
+class PasswordResetOTPDB(Base):
+    __tablename__ = "password_reset_otps"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), unique=True, nullable=False)
+    otp_hash = Column(String, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    attempts = Column(Integer, default=0, nullable=False)
+
+
 # Alias để các router dùng tên ngắn
 Product = ProductDB
 User = UserDB
+PasswordResetOTP = PasswordResetOTPDB

@@ -780,12 +780,16 @@
                 />
               </div>
               <div id="password-group">
-                <label class="field-label-sm">Mật khẩu</label>
+                <label class="field-label-sm" id="password-label"
+                  >Mật khẩu</label
+                >
                 <input
                   type="password"
                   id="user-password"
                   class="input-simple"
                   placeholder="••••••••"
+                  autocomplete="new-password"
+                  minlength="6"
                 />
               </div>
             </div>
@@ -1061,17 +1065,20 @@
         const isAdmin = document.getElementById("user-isadmin").checked;
 
         if (id) {
+          const updateData = {
+            full_name: fullName,
+            email: email,
+            is_admin: isAdmin,
+          };
+          if (password) updateData.password = password;
+
           const res = await fetch(`/users/${id}`, {
             method: "PUT",
             headers: {
               "Content-Type": "application/json",
               Authorization: `Bearer ${token}`,
             },
-            body: JSON.stringify({
-              full_name: fullName,
-              email: email,
-              is_admin: isAdmin,
-            }),
+            body: JSON.stringify(updateData),
           });
           if (res.ok) {
             alert("Cập nhật tài khoản thành công!");
@@ -1113,7 +1120,12 @@
         document.getElementById("user-fullname").value = fullName;
         document.getElementById("user-email").value = email;
         document.getElementById("user-isadmin").checked = isAdmin;
-        document.getElementById("password-group").style.display = "none";
+        document.getElementById("user-password").value = "";
+        document.getElementById("password-group").style.display = "block";
+        document.getElementById("password-label").textContent =
+          "Mật khẩu mới (để trống nếu không đổi)";
+        document.getElementById("user-password").placeholder =
+          "Nhập mật khẩu mới (tối thiểu 6 ký tự)";
       }
 
       function resetUserForm() {
@@ -1123,6 +1135,8 @@
         document.getElementById("user-password").value = "";
         document.getElementById("user-isadmin").checked = false;
         document.getElementById("password-group").style.display = "block";
+        document.getElementById("password-label").textContent = "Mật khẩu";
+        document.getElementById("user-password").placeholder = "••••••••";
       }
 
       async function deleteUser(id) {
