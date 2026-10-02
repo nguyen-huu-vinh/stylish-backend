@@ -705,6 +705,12 @@
                   placeholder="https://..."
                 />
               </div>
+              <div>
+                <label class="field-label-sm">Danh mục</label>
+                <select id="category" class="input-simple" required>
+                  <option value="">Chọn danh mục</option>
+                </select>
+              </div>
             </div>
             <div class="checkbox-group">
               <label class="checkbox-label"
@@ -734,6 +740,7 @@
                   <tr>
                     <th>Ảnh</th>
                     <th>Tên sản phẩm</th>
+                    <th>Danh mục</th>
                     <th>Giá niêm yết</th>
                     <th>Giá Sale</th>
                     <th>Trạng thái</th>
@@ -887,6 +894,7 @@
       function showAdminSection() {
         document.getElementById("login-section").classList.add("hidden");
         document.getElementById("admin-section").classList.remove("hidden");
+        loadCategories();
         loadProducts();
       }
 
@@ -907,6 +915,25 @@
       }
 
       // --- HÀM QUẢN LÝ SẢN PHẨM ---
+      async function loadCategories() {
+        const select = document.getElementById("category");
+        try {
+          const res = await fetch("/categories");
+          if (!res.ok) throw new Error("Không thể tải danh mục");
+          const categories = await res.json();
+          select.innerHTML = '<option value="">Chọn danh mục</option>';
+          categories.forEach((category) => {
+            const option = document.createElement("option");
+            option.value = category.id;
+            option.textContent = category.name;
+            select.appendChild(option);
+          });
+        } catch (error) {
+          select.innerHTML =
+            '<option value="">Không tải được danh mục</option>';
+        }
+      }
+
       async function loadProducts() {
         const res = await fetch("/products");
         const products = await res.json();
@@ -921,7 +948,7 @@
           products.filter((p) => p.is_trending).length;
 
         if (products.length === 0) {
-          tbody.innerHTML = `<tr class="empty-row"><td colspan="6">Chưa có sản phẩm nào. Thêm sản phẩm đầu tiên ở trên.</td></tr>`;
+          tbody.innerHTML = `<tr class="empty-row"><td colspan="7">Chưa có sản phẩm nào. Thêm sản phẩm đầu tiên ở trên.</td></tr>`;
           return;
         }
 
@@ -935,11 +962,13 @@
 
           const safeImg = escapeHtml(p.image_url || "");
           const safeName = escapeHtml(p.name);
+          const safeCategory = escapeHtml(p.category || "Chưa phân loại");
 
           tbody.innerHTML += `
                     <tr>
                         <td><img src="${safeImg}" class="product-img" onerror="this.src='https://via.placeholder.com/44'"></td>
                         <td><strong>${safeName}</strong></td>
+                        <td>${safeCategory}</td>
                         <td>${p.price.toLocaleString()}đ</td>
                         <td>${p.discount_price ? '<strong style="color:var(--brick-deep);">' + p.discount_price.toLocaleString() + "đ</strong>" : "-"}</td>
                         <td>${badges}</td>
@@ -959,11 +988,20 @@
           alert("Vui lòng nhập giá gốc hợp lệ!");
           return;
         }
+        const categoryId = parseInt(
+          document.getElementById("category").value,
+          10,
+        );
+        if (Number.isNaN(categoryId)) {
+          alert("Vui lòng chọn danh mục!");
+          return;
+        }
 
         const discountRaw = document.getElementById("discount_price").value;
         const data = {
           name: document.getElementById("name").value,
           price: priceValue,
+          category_id: categoryId,
           discount_price: discountRaw ? parseFloat(discountRaw) : null,
           image_url: document.getElementById("image_url").value,
           is_sale: document.getElementById("is_sale").checked,

@@ -1,7 +1,16 @@
 from datetime import datetime
 
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Float, Boolean
+from sqlalchemy.orm import relationship
 from database import Base
+
+
+class CategoryDB(Base):
+    __tablename__ = "categories"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, unique=True, nullable=False, index=True)
+    products = relationship("ProductDB", back_populates="category_ref")
 
 
 class ProductDB(Base):
@@ -14,6 +23,8 @@ class ProductDB(Base):
     is_sale = Column(Boolean, default=False)
     image_url = Column(String, nullable=False)
     is_trending = Column(Boolean, default=False)
+    category_id = Column(Integer, ForeignKey("categories.id"), nullable=True)
+    category_ref = relationship("CategoryDB", back_populates="products")
 
 
 class UserDB(Base):
@@ -39,5 +50,6 @@ class PasswordResetOTPDB(Base):
 
 # Alias để các router dùng tên ngắn
 Product = ProductDB
+Category = CategoryDB
 User = UserDB
 PasswordResetOTP = PasswordResetOTPDB

@@ -20,6 +20,12 @@ if login.status_code != 200:
     raise SystemExit(1)
 
 headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+categories_response = requests.get(f"{BASE_URL}/categories", timeout=30)
+categories_response.raise_for_status()
+category_ids = {
+    category["name"].casefold(): category["id"]
+    for category in categories_response.json()
+}
 
 # 2. Import sản phẩm từ CSV
 ok, failed = 0, 0
@@ -32,6 +38,7 @@ with open("products.csv", encoding="utf-8") as f:
                 "price": float(row["price"]),
                 "image_url": row["image_url"].strip(),
                 "is_trending": row["is_trending"].strip().lower() == "true",
+                "category_id": category_ids[row["category"].strip().casefold()],
             }
             if not payload["image_url"]:
                 raise ValueError("thiếu image_url")

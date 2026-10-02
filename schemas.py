@@ -30,9 +30,18 @@ class UserUpdate(BaseModel):
     password: Optional[str] = None
 
 
+class CategoryCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+
+
+class CategoryUpdate(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+
+
 class ProductSchema(BaseModel):
     name: str
     price: float
+    category_id: int
     discount_price: Optional[float] = None
     image_url: Optional[str] = None
     is_sale: bool = False

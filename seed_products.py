@@ -21,6 +21,12 @@ res = requests.post(
 )
 res.raise_for_status()
 headers = {"Authorization": f"Bearer {res.json()['access_token']}"}
+categories_response = requests.get(f"{BASE_URL}/categories", timeout=30)
+categories_response.raise_for_status()
+category_ids = {
+    category["name"].casefold(): category["id"]
+    for category in categories_response.json()
+}
 
 # 2. Seed sản phẩm
 with open("products.csv", encoding="utf-8") as f:
@@ -30,6 +36,7 @@ with open("products.csv", encoding="utf-8") as f:
             "price": float(row["price"]),
             "image_url": row["image_url"],
             "is_trending": row["is_trending"].strip().lower() == "true",
+            "category_id": category_ids[row["category"].strip().casefold()],
         }
         r = requests.post(f"{BASE_URL}/products", json=payload,
                           headers=headers, timeout=30)
