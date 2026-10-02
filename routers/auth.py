@@ -12,7 +12,13 @@ from config import SECRET_KEY
 from dependencies import get_db, get_current_user
 from mailtrap import is_mailtrap_configured, send_password_reset_otp
 from models import PasswordResetOTP, User
-from schemas import ForgotPasswordRequest, PasswordChange, ResetPasswordRequest, UserRegister
+from schemas import (
+    ForgotPasswordRequest,
+    PasswordChange,
+    ResetPasswordRequest,
+    UserProfileUpdate,
+    UserRegister,
+)
 from security import verify_password, get_password_hash, create_access_token
 
 router = APIRouter(tags=["Auth"])
@@ -60,6 +66,48 @@ def get_me(current_user: User = Depends(get_current_user)):
         "email": current_user.email,
         "full_name": current_user.full_name,
         "is_admin": current_user.is_admin,
+    }
+
+
+@router.put("/me")
+def update_me(
+    profile_data: UserProfileUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    updates = profile_data.model_dump(exclude_unset=True)
+    if not updates:
+        raise HTTPException(status_code=422, detail="Không có thông tin cần cập nhật")
+
+    if "full_name" in updates:
+        full_name = updates["full_name"]
+        if full_name is not None:
+            full_name = full_name.strip()
+            if not full_name:
+                raise HTTPException(status_code=422, detail="Họ tên không được để trống")
+        current_user.full_name = full_name
+
+    new_token = None
+    if "email" in updates:
+        email = (updates["email"] or "").strip().lower()
+        if not email or "@" not in email:
+            raise HTTPException(status_code=422, detail="Email không hợp lệ")
+        existing = db.query(User).filter(User.email == email, User.id != current_user.id).first()
+        if existing:
+            raise HTTPException(status_code=409, detail="Email này đã được sử dụng")
+        if email != current_user.email:
+            current_user.email = email
+            new_token = create_access_token(data={"sub": email})
+
+    db.commit()
+    db.refresh(current_user)
+    return {
+        "id": current_user.id,
+        "email": current_user.email,
+        "full_name": current_user.full_name,
+        "is_admin": current_user.is_admin,
+        "access_token": new_token,
+        "token_type": "bearer" if new_token else None,
     }
 
 

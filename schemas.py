@@ -1,5 +1,5 @@
 from typing import Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, EmailStr, Field
 
 
 class UserRegister(BaseModel):
@@ -28,6 +28,11 @@ class UserUpdate(BaseModel):
     email: Optional[str] = None
     is_admin: Optional[bool] = None
     password: Optional[str] = None
+
+
+class UserProfileUpdate(BaseModel):
+    full_name: Optional[str] = Field(default=None, max_length=120)
+    email: Optional[EmailStr] = Field(default=None, max_length=254)
 
 
 class CategoryCreate(BaseModel):
