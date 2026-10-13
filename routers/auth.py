@@ -59,6 +59,10 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
     return {"access_token": access_token, "token_type": "bearer", "is_admin": user.is_admin}
 
 
+def avatar_url(user: User):
+    return f"/avatars/{user.avatar.key}" if user.avatar else None
+
+
 @router.get("/me")
 def get_me(current_user: User = Depends(get_current_user)):
     return {
@@ -66,6 +70,7 @@ def get_me(current_user: User = Depends(get_current_user)):
         "email": current_user.email,
         "full_name": current_user.full_name,
         "is_admin": current_user.is_admin,
+        "avatar_url": avatar_url(current_user),
     }
 
 
@@ -106,6 +111,7 @@ def update_me(
         "email": current_user.email,
         "full_name": current_user.full_name,
         "is_admin": current_user.is_admin,
+        "avatar_url": avatar_url(current_user),
         "access_token": new_token,
         "token_type": "bearer" if new_token else None,
     }

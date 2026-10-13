@@ -11,7 +11,7 @@ from database import (
     ensure_product_category_schema,
 )
 from security import get_password_hash
-from routers import auth, users, products, admin, categories, orders, tracking
+from routers import auth, avatars, users, products, admin, categories, orders, tracking
 
 Base.metadata.create_all(bind=engine)
 ensure_product_category_schema()
@@ -28,6 +28,7 @@ app.add_middleware(
 )
 
 app.include_router(auth.router)
+app.include_router(avatars.router)
 app.include_router(users.router)
 app.include_router(products.router)
 app.include_router(categories.router)

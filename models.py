@@ -1,7 +1,16 @@
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Float, Boolean
-from sqlalchemy.orm import relationship
+from sqlalchemy import (
+    Boolean,
+    Column,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    LargeBinary,
+    String,
+)
+from sqlalchemy.orm import deferred, relationship
 from database import Base
 
 
@@ -38,6 +47,23 @@ class UserDB(Base):
     hashed_password = Column(String, nullable=False)
     full_name = Column(String, nullable=True)
     is_admin = Column(Boolean, default=False)
+    avatar = relationship(
+        "UserAvatarDB", uselist=False, cascade="all, delete-orphan"
+    )
+
+
+class UserAvatarDB(Base):
+    """Ảnh đại diện lưu trong database: ổ đĩa Render bị xóa mỗi lần deploy."""
+
+    __tablename__ = "user_avatars"
+
+    user_id = Column(Integer, ForeignKey("users.id"), primary_key=True)
+    # Mã ngẫu nhiên làm đường dẫn ảnh: không đoán được, đổi ảnh là đổi mã
+    key = Column(String, unique=True, index=True, nullable=False)
+    content_type = Column(String, nullable=False)
+    # Chỉ tải dữ liệu ảnh khi thật sự cần (khi phục vụ ảnh), không phải mỗi /me
+    data = deferred(Column(LargeBinary, nullable=False))
+    updated_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
 
 class PasswordResetOTPDB(Base):
@@ -123,3 +149,4 @@ PasswordResetOTP = PasswordResetOTPDB
 Order = OrderDB
 OrderItem = OrderItemDB
 OrderEvent = OrderEventDB
+UserAvatar = UserAvatarDB
