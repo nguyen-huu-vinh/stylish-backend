@@ -67,6 +67,12 @@ class OrderDB(Base):
     items = relationship(
         "OrderItemDB", back_populates="order", cascade="all, delete-orphan"
     )
+    events = relationship(
+        "OrderEventDB",
+        back_populates="order",
+        cascade="all, delete-orphan",
+        order_by="OrderEventDB.id",
+    )
 
 
 class OrderItemDB(Base):
@@ -85,6 +91,19 @@ class OrderItemDB(Base):
     order = relationship("OrderDB", back_populates="items")
 
 
+class OrderEventDB(Base):
+    """Một mốc trong hành trình đơn hàng, dùng cho màn hình theo dõi đơn."""
+
+    __tablename__ = "order_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    order_id = Column(Integer, ForeignKey("orders.id"), nullable=False, index=True)
+    status = Column(String, nullable=False)
+    note = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    order = relationship("OrderDB", back_populates="events")
+
+
 # Alias để các router dùng tên ngắn
 Product = ProductDB
 Category = CategoryDB
@@ -92,3 +111,4 @@ User = UserDB
 PasswordResetOTP = PasswordResetOTPDB
 Order = OrderDB
 OrderItem = OrderItemDB
+OrderEvent = OrderEventDB

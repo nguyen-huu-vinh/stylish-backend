@@ -5,8 +5,8 @@ from sqlalchemy.orm import Session, selectinload
 
 from config import BANK_ACCOUNT_NAME, BANK_ACCOUNT_NO, BANK_ID
 from dependencies import get_db, get_current_admin, get_current_user
-from models import Order, OrderItem, Product, User
-from schemas import OrderCreate, OrderStatusUpdate
+from models import Order, OrderEvent, OrderItem, Product, User
+from schemas import OrderCancel, OrderCreate, OrderStatusUpdate
 
 router = APIRouter(tags=["Orders"])
 
@@ -45,6 +45,25 @@ def _bank_transfer(order: Order):
     }
 
 
+def _timeline(order: Order):
+    events = [
+        {
+            "status": event.status,
+            "note": event.note,
+            "created_at": event.created_at.isoformat(),
+        }
+        for event in order.events
+    ]
+    # Đơn tạo trước khi có bảng order_events: dựng lại mốc đặt hàng
+    if not events or events[0]["status"] != "pending":
+        events.insert(0, {
+            "status": "pending",
+            "note": None,
+            "created_at": order.created_at.isoformat(),
+        })
+    return events
+
+
 def _order_response(order: Order):
     return {
         "id": order.id,
@@ -58,6 +77,7 @@ def _order_response(order: Order):
         "total": order.total,
         "created_at": order.created_at.isoformat(),
         "bank_transfer": _bank_transfer(order),
+        "timeline": _timeline(order),
         "items": [
             {
                 "product_id": item.product_id,
@@ -120,6 +140,7 @@ def create_order(
         status="pending",
         total=sum(item.unit_price * item.quantity for item in order_items),
         items=order_items,
+        events=[OrderEvent(status="pending")],
     )
     db.add(order)
     db.commit()
@@ -134,7 +155,7 @@ def get_my_orders(
 ):
     orders = (
         db.query(Order)
-        .options(selectinload(Order.items))
+        .options(selectinload(Order.items), selectinload(Order.events))
         .filter(Order.user_id == current_user.id)
         .order_by(Order.created_at.desc())
         .all()
@@ -155,6 +176,33 @@ def get_order_detail(
     return _order_response(order)
 
 
+@router.post("/orders/{order_id}/cancel")
+def cancel_my_order(
+    order_id: int,
+    data: OrderCancel,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    order = db.query(Order).filter(Order.id == order_id).first()
+    if not order or order.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Không tìm thấy đơn hàng")
+    if order.status != "pending":
+        raise HTTPException(
+            status_code=400,
+            detail="Chỉ có thể hủy đơn khi đơn đang chờ xác nhận",
+        )
+
+    reason = data.reason.strip() if data.reason else ""
+    order.status = "cancelled"
+    order.events.append(OrderEvent(
+        status="cancelled",
+        note=f"Bạn đã hủy đơn: {reason}" if reason else "Bạn đã hủy đơn",
+    ))
+    db.commit()
+    db.refresh(order)
+    return _order_response(order)
+
+
 @router.get("/admin/orders")
 def get_all_orders(
     db: Session = Depends(get_db),
@@ -162,7 +210,7 @@ def get_all_orders(
 ):
     orders = (
         db.query(Order)
-        .options(selectinload(Order.items))
+        .options(selectinload(Order.items), selectinload(Order.events))
         .order_by(Order.created_at.desc())
         .all()
     )
@@ -179,7 +227,13 @@ def update_order_status(
     order = db.query(Order).filter(Order.id == order_id).first()
     if not order:
         raise HTTPException(status_code=404, detail="Không tìm thấy đơn hàng")
+    note = data.note.strip() if data.note else None
+    # Chọn lại đúng trạng thái cũ mà không có ghi chú thì không tạo mốc mới
+    if data.status == order.status and not note:
+        return _order_response(order)
+
     order.status = data.status
+    order.events.append(OrderEvent(status=data.status, note=note or None))
     db.commit()
     db.refresh(order)
     return _order_response(order)

@@ -87,3 +87,8 @@ class OrderCreate(BaseModel):
 
 class OrderStatusUpdate(BaseModel):
     status: Literal["pending", "confirmed", "shipping", "completed", "cancelled"]
+    note: Optional[str] = Field(default=None, max_length=300)
+
+
+class OrderCancel(BaseModel):
+    reason: Optional[str] = Field(default=None, max_length=300)

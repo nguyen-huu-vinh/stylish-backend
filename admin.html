@@ -1467,6 +1467,15 @@
       }
 
       async function updateOrderStatus(select) {
+        const note = prompt(
+          `Ghi chú hiển thị cho khách khi chuyển sang "${ORDER_STATUSES[select.value]}" (có thể bỏ trống):`,
+          "",
+        );
+        // Bấm Hủy trên hộp thoại thì không đổi trạng thái
+        if (note === null) {
+          select.value = select.dataset.current;
+          return;
+        }
         select.disabled = true;
         try {
           const res = await fetch(`/admin/orders/${select.dataset.id}/status`, {
@@ -1475,7 +1484,7 @@
               "Content-Type": "application/json",
               Authorization: `Bearer ${token}`,
             },
-            body: JSON.stringify({ status: select.value }),
+            body: JSON.stringify({ status: select.value, note: note.trim() || null }),
           });
           if (!res.ok) throw new Error();
           loadOrders();
