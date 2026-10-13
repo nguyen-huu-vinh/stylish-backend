@@ -28,6 +28,12 @@ services:
         sync: false
       - key: MAIL_FROM_NAME
         value: Stylish
+      - key: BANK_ID
+        sync: false
+      - key: BANK_ACCOUNT_NO
+        sync: false
+      - key: BANK_ACCOUNT_NAME
+        sync: false
 
 databases:
   - name: stylish-db

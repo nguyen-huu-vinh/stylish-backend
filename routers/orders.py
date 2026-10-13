@@ -1,6 +1,9 @@
+from urllib.parse import quote, urlencode
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, selectinload
 
+from config import BANK_ACCOUNT_NAME, BANK_ACCOUNT_NO, BANK_ID
 from dependencies import get_db, get_current_admin, get_current_user
 from models import Order, OrderItem, Product, User
 from schemas import OrderCreate, OrderStatusUpdate
@@ -12,6 +15,34 @@ def _sale_price(product: Product) -> float:
     if product.discount_price is not None and product.discount_price < product.price:
         return product.discount_price
     return product.price
+
+
+def _bank_transfer_enabled() -> bool:
+    return bool(BANK_ID and BANK_ACCOUNT_NO and BANK_ACCOUNT_NAME)
+
+
+def _bank_transfer(order: Order):
+    if order.payment_method != "bank" or not _bank_transfer_enabled():
+        return None
+    content = f"DH{order.id}"
+    amount = round(order.total)
+    query = urlencode({
+        "amount": amount,
+        "addInfo": content,
+        "accountName": BANK_ACCOUNT_NAME,
+    })
+    return {
+        "bank_id": BANK_ID,
+        "account_no": BANK_ACCOUNT_NO,
+        "account_name": BANK_ACCOUNT_NAME,
+        "amount": amount,
+        "content": content,
+        # Ảnh QR chuẩn VietQR, quét được bằng mọi app ngân hàng
+        "qr_url": (
+            f"https://img.vietqr.io/image/{quote(BANK_ID)}-{quote(BANK_ACCOUNT_NO)}"
+            f"-compact2.png?{query}"
+        ),
+    }
 
 
 def _order_response(order: Order):
@@ -26,6 +57,7 @@ def _order_response(order: Order):
         "status": order.status,
         "total": order.total,
         "created_at": order.created_at.isoformat(),
+        "bank_transfer": _bank_transfer(order),
         "items": [
             {
                 "product_id": item.product_id,
@@ -46,6 +78,12 @@ def create_order(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    if data.payment_method == "bank" and not _bank_transfer_enabled():
+        raise HTTPException(
+            status_code=400,
+            detail="Cửa hàng chưa hỗ trợ chuyển khoản, vui lòng chọn thanh toán khi nhận hàng",
+        )
+
     product_ids = {item.product_id for item in data.items}
     products = {
         product.id: product

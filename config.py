@@ -22,3 +22,9 @@ MAILTRAP_USERNAME = os.getenv("MAILTRAP_USERNAME")
 MAILTRAP_PASSWORD = os.getenv("MAILTRAP_PASSWORD")
 MAIL_FROM_EMAIL = os.getenv("MAIL_FROM_EMAIL", "no-reply@stylish.local")
 MAIL_FROM_NAME = os.getenv("MAIL_FROM_NAME", "Stylish")
+
+# Tài khoản nhận chuyển khoản (VietQR). BANK_ID là mã BIN hoặc tên viết tắt
+# ngân hàng theo vietqr.io, ví dụ: 970436 hoặc VCB, MB, TCB, ACB...
+BANK_ID = os.getenv("BANK_ID")
+BANK_ACCOUNT_NO = os.getenv("BANK_ACCOUNT_NO")
+BANK_ACCOUNT_NAME = os.getenv("BANK_ACCOUNT_NAME")
