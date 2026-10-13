@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Stylish – Giao hàng</title>
+    <style>
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        background: #f7f7f8;
+        color: #222;
+      }
+      header {
+        background: #fe3e6c;
+        color: #fff;
+        padding: 18px 16px;
+        font-weight: 700;
+        font-size: 18px;
+      }
+      main { padding: 16px; max-width: 520px; margin: 0 auto; }
+      .card {
+        background: #fff;
+        border-radius: 14px;
+        padding: 16px;
+        margin-bottom: 14px;
+        border: 1px solid #ecedef;
+      }
+      .label { font-size: 12px; color: #777; margin-bottom: 4px; }
+      .value { font-size: 15px; font-weight: 600; margin-bottom: 12px; word-break: break-word; }
+      .value:last-child { margin-bottom: 0; }
+      .row { display: flex; gap: 10px; flex-wrap: wrap; }
+      .btn {
+        flex: 1 1 140px;
+        border: 0;
+        border-radius: 12px;
+        padding: 15px 12px;
+        font-size: 15px;
+        font-weight: 700;
+        text-align: center;
+        text-decoration: none;
+        cursor: pointer;
+      }
+      .btn-primary { background: #fe3e6c; color: #fff; }
+      .btn-outline { background: #fff; color: #fe3e6c; border: 2px solid #fe3e6c; }
+      .btn-success { background: #1e8e4a; color: #fff; }
+      .btn:disabled { opacity: 0.5; cursor: default; }
+      .status {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 14px;
+        line-height: 1.5;
+      }
+      .dot { width: 12px; height: 12px; border-radius: 50%; background: #bbb; flex: none; }
+      .dot.live { background: #1e8e4a; box-shadow: 0 0 0 4px #d5f0df; }
+      .error { color: #c62848; font-weight: 600; }
+      .muted { color: #777; font-size: 13px; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <header>Stylish – Giao hàng</header>
+    <main>
+      <div id="message" class="card" hidden></div>
+
+      <div id="order" hidden>
+        <div class="card">
+          <div class="label">Mã đơn</div>
+          <div class="value" id="code"></div>
+          <div class="label">Người nhận</div>
+          <div class="value" id="customer"></div>
+          <div class="label">Địa chỉ</div>
+          <div class="value" id="address"></div>
+          <div id="note-block" hidden>
+            <div class="label">Ghi chú</div>
+            <div class="value" id="note"></div>
+          </div>
+          <div class="label">Thu của khách</div>
+          <div class="value" id="collect"></div>
+        </div>
+
+        <div class="row" style="margin-bottom: 14px">
+          <a class="btn btn-outline" id="call">Gọi khách</a>
+          <a class="btn btn-outline" id="directions" target="_blank" rel="noopener">Chỉ đường</a>
+        </div>
+
+        <div class="card">
+          <div class="status">
+            <span class="dot" id="dot"></span>
+            <span id="sharing-text">Chưa chia sẻ vị trí</span>
+          </div>
+          <div class="muted" id="last-sent" style="margin-top: 8px"></div>
+        </div>
+
+        <div class="row">
+          <button class="btn btn-primary" id="toggle">Bắt đầu giao</button>
+          <button class="btn btn-success" id="delivered">Đã giao hàng</button>
+        </div>
+      </div>
+    </main>
+
+    <script>
+      const params = new URLSearchParams(location.search);
+      const orderId = params.get("order");
+      const token = params.get("token");
+      // Gửi tối đa mỗi 8 giây một lần cho đỡ tốn pin và dữ liệu
+      const SEND_INTERVAL_MS = 8000;
+
+      let watchId = null;
+      let wakeLock = null;
+      let lastSentAt = 0;
+      let pending = null;
+
+      const $ = (id) => document.getElementById(id);
+
+      function showMessage(text, isError = false) {
+        const box = $("message");
+        box.hidden = false;
+        box.className = "card" + (isError ? " error" : "");
+        box.textContent = text;
+      }
+
+      function formatVnd(value) {
+        return Math.round(value).toLocaleString("vi-VN") + " ₫";
+      }
+
+      async function loadOrder() {
+        if (!orderId || !token) {
+          showMessage("Link giao hàng thiếu thông tin. Hãy mở đúng link cửa hàng gửi.", true);
+          return;
+        }
+        try {
+          const res = await fetch(`/shipper/orders/${orderId}?token=${encodeURIComponent(token)}`);
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.detail || "Không tải được đơn hàng");
+
+          $("code").textContent = data.code;
+          $("customer").textContent = `${data.full_name} · ${data.phone}`;
+          $("address").textContent = data.address;
+          if (data.note) {
+            $("note").textContent = data.note;
+            $("note-block").hidden = false;
+          }
+          $("collect").textContent =
+            data.payment_method === "cod" ? formatVnd(data.total) : "0 ₫ (đã chuyển khoản)";
+          $("call").href = `tel:${data.phone}`;
+          $("directions").href =
+            "https://www.google.com/maps/dir/?api=1&destination=" + encodeURIComponent(data.address);
+          $("order").hidden = false;
+
+          if (data.status !== "shipping") {
+            const done = data.status === "completed";
+            showMessage(done ? "Đơn này đã giao xong." : "Đơn này không còn ở trạng thái đang giao.");
+            $("toggle").disabled = true;
+            $("delivered").disabled = true;
+          }
+        } catch (e) {
+          showMessage(e.message, true);
+        }
+      }
+
+      async function sendLocation(position) {
+        pending = position;
+        const now = Date.now();
+        if (now - lastSentAt < SEND_INTERVAL_MS) return;
+        lastSentAt = now;
+        const { latitude, longitude, accuracy } = pending.coords;
+        try {
+          const res = await fetch(`/shipper/orders/${orderId}/location`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ token, lat: latitude, lng: longitude }),
+          });
+          if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            throw new Error(data.detail || "Gửi vị trí thất bại");
+          }
+          $("last-sent").textContent =
+            `Đã gửi lúc ${new Date().toLocaleTimeString("vi-VN")} · sai số ~${Math.round(accuracy)} m`;
+        } catch (e) {
+          $("last-sent").textContent = e.message;
+          if (e.message.includes("không còn")) stopSharing();
+        }
+      }
+
+      // Giữ màn hình sáng để trình duyệt không ngừng gửi vị trí
+      async function requestWakeLock() {
+        try {
+          wakeLock = await navigator.wakeLock?.request("screen");
+          // Trình duyệt tự nhả khi chuyển tab, ghi nhận để lúc quay lại xin lại
+          wakeLock?.addEventListener("release", () => (wakeLock = null));
+        } catch (_) {}
+      }
+
+      function onGeoError(error) {
+        const messages = {
+          1: "Bạn chưa cho phép truy cập vị trí. Hãy bật quyền vị trí cho trình duyệt rồi thử lại.",
+          2: "Không xác định được vị trí. Hãy bật GPS.",
+          3: "Lấy vị trí quá lâu, đang thử lại...",
+        };
+        $("last-sent").textContent = messages[error.code] || "Lỗi vị trí";
+        if (error.code === 1) stopSharing();
+      }
+
+      async function startSharing() {
+        if (!("geolocation" in navigator)) {
+          showMessage("Trình duyệt này không hỗ trợ định vị.", true);
+          return;
+        }
+        lastSentAt = 0;
+        watchId = navigator.geolocation.watchPosition(sendLocation, onGeoError, {
+          enableHighAccuracy: true,
+          maximumAge: 5000,
+          timeout: 20000,
+        });
+        await requestWakeLock();
+        $("dot").classList.add("live");
+        $("sharing-text").textContent = "Đang chia sẻ vị trí với khách. Giữ trang này mở khi giao.";
+        $("toggle").textContent = "Tạm dừng";
+      }
+
+      function stopSharing() {
+        if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+        watchId = null;
+        wakeLock?.release().catch(() => {});
+        wakeLock = null;
+        $("dot").classList.remove("live");
+        $("sharing-text").textContent = "Chưa chia sẻ vị trí";
+        $("toggle").textContent = "Bắt đầu giao";
+      }
+
+      $("toggle").addEventListener("click", () => {
+        watchId === null ? startSharing() : stopSharing();
+      });
+
+      $("delivered").addEventListener("click", async () => {
+        if (!confirm("Xác nhận đã giao hàng cho khách?")) return;
+        $("delivered").disabled = true;
+        try {
+          const res = await fetch(`/shipper/orders/${orderId}/delivered`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ token }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data.detail || "Không cập nhật được");
+          stopSharing();
+          $("toggle").disabled = true;
+          showMessage("Đã xác nhận giao hàng thành công. Cảm ơn bạn!");
+        } catch (e) {
+          showMessage(e.message, true);
+          $("delivered").disabled = false;
+        }
+      });
+
+      document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible" && watchId !== null && !wakeLock) {
+          requestWakeLock();
+        }
+      });
+
+      loadOrder();
+    </script>
+  </body>
+</html>

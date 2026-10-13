@@ -64,6 +64,17 @@ class OrderDB(Base):
     status = Column(String, default="pending", nullable=False)
     total = Column(Float, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Theo dõi đơn trên bản đồ
+    delivery_lat = Column(Float, nullable=True)  # tọa độ địa chỉ nhận hàng
+    delivery_lng = Column(Float, nullable=True)
+    geocoded = Column(Boolean, default=False)  # đã thử đổi địa chỉ ra tọa độ
+    shipper_lat = Column(Float, nullable=True)  # vị trí mới nhất của shipper
+    shipper_lng = Column(Float, nullable=True)
+    shipper_updated_at = Column(DateTime, nullable=True)
+    # Mã bí mật trong link gửi cho shipper, tạo khi đơn chuyển sang "shipping"
+    tracking_token = Column(String, nullable=True)
+
     items = relationship(
         "OrderItemDB", back_populates="order", cascade="all, delete-orphan"
     )

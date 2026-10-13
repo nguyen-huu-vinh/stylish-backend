@@ -23,6 +23,31 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
 
+def ensure_order_tracking_schema():
+    """Thêm các cột theo dõi bản đồ vào bảng orders đã có sẵn trên server."""
+    Base.metadata.create_all(bind=engine)
+
+    new_columns = {
+        "delivery_lat": "FLOAT",
+        "delivery_lng": "FLOAT",
+        "geocoded": "BOOLEAN DEFAULT FALSE",
+        "shipper_lat": "FLOAT",
+        "shipper_lng": "FLOAT",
+        "shipper_updated_at": "TIMESTAMP",
+        "tracking_token": "VARCHAR",
+    }
+    with engine.begin() as connection:
+        columns = {
+            column["name"]
+            for column in inspect(connection).get_columns("orders")
+        }
+        for name, column_type in new_columns.items():
+            if name not in columns:
+                connection.execute(
+                    text(f"ALTER TABLE orders ADD COLUMN {name} {column_type}")
+                )
+
+
 def ensure_product_category_schema():
     from models import Category, Product
 

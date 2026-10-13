@@ -23,6 +23,11 @@ MAILTRAP_PASSWORD = os.getenv("MAILTRAP_PASSWORD")
 MAIL_FROM_EMAIL = os.getenv("MAIL_FROM_EMAIL", "no-reply@stylish.local")
 MAIL_FROM_NAME = os.getenv("MAIL_FROM_NAME", "Stylish")
 
+# Vị trí cửa hàng hiện trên bản đồ theo dõi đơn (bỏ trống thì không hiện)
+SHOP_NAME = os.getenv("SHOP_NAME", "Stylish")
+SHOP_LAT = float(os.getenv("SHOP_LAT")) if os.getenv("SHOP_LAT") else None
+SHOP_LNG = float(os.getenv("SHOP_LNG")) if os.getenv("SHOP_LNG") else None
+
 # Tài khoản nhận chuyển khoản (VietQR). BANK_ID là mã BIN hoặc tên viết tắt
 # ngân hàng theo vietqr.io, ví dụ: 970436 hoặc VCB, MB, TCB, ACB...
 BANK_ID = os.getenv("BANK_ID")

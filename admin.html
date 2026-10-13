@@ -1455,6 +1455,13 @@
                             <select class="input-simple order-status" data-id="${o.id}" data-current="${o.status}">
                                 ${options}
                             </select>
+                            ${
+                              o.status === "shipping" && o.tracking_token
+                                ? `<button class="btn-action btn-toggle shipper-link-btn" style="margin-top:6px" data-id="${o.id}" data-token="${escapeHtml(o.tracking_token)}">
+                                     <i class="fa-solid fa-motorcycle"></i> Link shipper
+                                   </button>`
+                                : ""
+                            }
                         </td>
                     </tr>
                 `;
@@ -1464,6 +1471,20 @@
         document.querySelectorAll(".order-status").forEach((select) => {
           select.addEventListener("change", () => updateOrderStatus(select));
         });
+        document.querySelectorAll(".shipper-link-btn").forEach((btn) => {
+          btn.addEventListener("click", () => copyShipperLink(btn));
+        });
+      }
+
+      // Link bí mật để shipper mở trên điện thoại và chia sẻ vị trí
+      async function copyShipperLink(btn) {
+        const link = `${location.origin}/shipper?order=${btn.dataset.id}&token=${encodeURIComponent(btn.dataset.token)}`;
+        try {
+          await navigator.clipboard.writeText(link);
+          alert("Đã sao chép link giao hàng. Gửi link này cho shipper (Zalo, SMS...):\n\n" + link);
+        } catch (e) {
+          prompt("Sao chép link này và gửi cho shipper:", link);
+        }
       }
 
       async function updateOrderStatus(select) {

@@ -28,6 +28,10 @@ services:
         sync: false
       - key: MAIL_FROM_NAME
         value: Stylish
+      - key: SHOP_LAT
+        sync: false
+      - key: SHOP_LNG
+        sync: false
       - key: BANK_ID
         sync: false
       - key: BANK_ACCOUNT_NO

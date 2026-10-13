@@ -90,5 +90,14 @@ class OrderStatusUpdate(BaseModel):
     note: Optional[str] = Field(default=None, max_length=300)
 
 
+class ShipperToken(BaseModel):
+    token: str = Field(min_length=10, max_length=100)
+
+
+class ShipperLocation(ShipperToken):
+    lat: float = Field(ge=-90, le=90)
+    lng: float = Field(ge=-180, le=180)
+
+
 class OrderCancel(BaseModel):
     reason: Optional[str] = Field(default=None, max_length=300)

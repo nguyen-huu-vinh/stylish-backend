@@ -1,3 +1,4 @@
+import secrets
 from urllib.parse import quote, urlencode
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -62,6 +63,11 @@ def _timeline(order: Order):
             "created_at": order.created_at.isoformat(),
         })
     return events
+
+
+def _admin_order_response(order: Order):
+    # Chỉ admin mới thấy mã link shipper
+    return {**_order_response(order), "tracking_token": order.tracking_token}
 
 
 def _order_response(order: Order):
@@ -214,7 +220,7 @@ def get_all_orders(
         .order_by(Order.created_at.desc())
         .all()
     )
-    return [_order_response(order) for order in orders]
+    return [_admin_order_response(order) for order in orders]
 
 
 @router.put("/admin/orders/{order_id}/status")
@@ -230,10 +236,12 @@ def update_order_status(
     note = data.note.strip() if data.note else None
     # Chọn lại đúng trạng thái cũ mà không có ghi chú thì không tạo mốc mới
     if data.status == order.status and not note:
-        return _order_response(order)
+        return _admin_order_response(order)
 
     order.status = data.status
     order.events.append(OrderEvent(status=data.status, note=note or None))
+    if data.status == "shipping" and not order.tracking_token:
+        order.tracking_token = secrets.token_urlsafe(16)
     db.commit()
     db.refresh(order)
-    return _order_response(order)
+    return _admin_order_response(order)
