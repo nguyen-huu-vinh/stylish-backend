@@ -51,8 +51,44 @@ class PasswordResetOTPDB(Base):
     attempts = Column(Integer, default=0, nullable=False)
 
 
+class OrderDB(Base):
+    __tablename__ = "orders"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    full_name = Column(String, nullable=False)
+    phone = Column(String, nullable=False)
+    address = Column(String, nullable=False)
+    note = Column(String, nullable=True)
+    payment_method = Column(String, nullable=False)
+    status = Column(String, default="pending", nullable=False)
+    total = Column(Float, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    items = relationship(
+        "OrderItemDB", back_populates="order", cascade="all, delete-orphan"
+    )
+
+
+class OrderItemDB(Base):
+    __tablename__ = "order_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    order_id = Column(Integer, ForeignKey("orders.id"), nullable=False, index=True)
+    # Không ràng buộc khóa ngoại cứng: sản phẩm bị xóa thì đơn cũ vẫn còn
+    product_id = Column(Integer, nullable=False)
+    # Lưu lại tên, ảnh, giá tại thời điểm mua để đơn không đổi khi sửa sản phẩm
+    product_name = Column(String, nullable=False)
+    image_url = Column(String, nullable=False)
+    size = Column(String, nullable=True)
+    unit_price = Column(Float, nullable=False)
+    quantity = Column(Integer, nullable=False)
+    order = relationship("OrderDB", back_populates="items")
+
+
 # Alias để các router dùng tên ngắn
 Product = ProductDB
 Category = CategoryDB
 User = UserDB
 PasswordResetOTP = PasswordResetOTPDB
+Order = OrderDB
+OrderItem = OrderItemDB

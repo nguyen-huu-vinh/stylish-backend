@@ -5,7 +5,7 @@ import models  # noqa: F401  (phải import để create_all thấy các bảng)
 from config import ADMIN_EMAIL, ADMIN_PASSWORD
 from database import engine, SessionLocal, Base, ensure_product_category_schema
 from security import get_password_hash
-from routers import auth, users, products, admin, categories
+from routers import auth, users, products, admin, categories, orders
 
 Base.metadata.create_all(bind=engine)
 ensure_product_category_schema()
@@ -24,6 +24,7 @@ app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(products.router)
 app.include_router(categories.router)
+app.include_router(orders.router)
 app.include_router(admin.router)
 
 

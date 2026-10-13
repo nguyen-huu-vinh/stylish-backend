@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Literal, Optional
 from pydantic import BaseModel, EmailStr, Field, model_validator
 
 
@@ -69,3 +69,21 @@ class ProductSchema(BaseModel):
 
     class Config:
         model_config = {"from_attributes": True}
+
+class OrderItemCreate(BaseModel):
+    product_id: int
+    size: Optional[str] = Field(default=None, max_length=20)
+    quantity: int = Field(ge=1, le=99)
+
+
+class OrderCreate(BaseModel):
+    full_name: str = Field(min_length=1, max_length=120)
+    phone: str = Field(pattern=r"^\d{9,11}$")
+    address: str = Field(min_length=1, max_length=500)
+    note: Optional[str] = Field(default=None, max_length=500)
+    payment_method: Literal["cod", "bank"]
+    items: list[OrderItemCreate] = Field(min_length=1, max_length=50)
+
+
+class OrderStatusUpdate(BaseModel):
+    status: Literal["pending", "confirmed", "shipping", "completed", "cancelled"]
