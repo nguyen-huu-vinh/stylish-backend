@@ -626,6 +626,11 @@
               <i class="fa-solid fa-users"></i> Quản Lý Tài Khoản
             </a>
           </li>
+          <li>
+            <a href="#" id="menu-orders" onclick="switchTab('orders')">
+              <i class="fa-solid fa-receipt"></i> Quản Lý Đơn Hàng
+            </a>
+          </li>
         </ul>
         <button class="btn-logout" onclick="logout()">
           <i class="fa-solid fa-right-from-bracket"></i> Đăng Xuất
@@ -863,6 +868,57 @@
             </div>
           </div>
         </div>
+
+        <!-- TAB ĐƠN HÀNG -->
+        <div id="tab-orders" class="hidden">
+          <div class="page-header">
+            <h1 class="page-title">Danh Sách Đơn Hàng</h1>
+            <div class="page-sub">Theo dõi và cập nhật trạng thái đơn của khách.</div>
+          </div>
+
+          <div class="stat-row">
+            <div class="stat-card">
+              <div class="stat-icon brick"><i class="fa-solid fa-receipt"></i></div>
+              <div>
+                <div class="stat-value" id="stat-total-orders">0</div>
+                <div class="stat-label">Tổng đơn hàng</div>
+              </div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-icon gold"><i class="fa-solid fa-hourglass-half"></i></div>
+              <div>
+                <div class="stat-value" id="stat-pending-orders">0</div>
+                <div class="stat-label">Chờ xác nhận</div>
+              </div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-icon sage"><i class="fa-solid fa-coins"></i></div>
+              <div>
+                <div class="stat-value" id="stat-revenue">0 ₫</div>
+                <div class="stat-label">Doanh thu (đơn hoàn thành)</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card" style="padding: 0; overflow: hidden">
+            <div class="table-responsive">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Mã Đơn</th>
+                    <th>Khách Hàng</th>
+                    <th>Sản Phẩm</th>
+                    <th>Tổng Tiền</th>
+                    <th>Thanh Toán</th>
+                    <th>Ngày Đặt</th>
+                    <th>Trạng Thái</th>
+                  </tr>
+                </thead>
+                <tbody id="order-list"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -927,19 +983,20 @@
       }
 
       function switchTab(tab) {
-        if (tab === "products") {
-          document.getElementById("tab-products").classList.remove("hidden");
-          document.getElementById("tab-users").classList.add("hidden");
-          document.getElementById("menu-products").classList.add("active");
-          document.getElementById("menu-users").classList.remove("active");
-          loadProducts();
-        } else {
-          document.getElementById("tab-products").classList.add("hidden");
-          document.getElementById("tab-users").classList.remove("hidden");
-          document.getElementById("menu-products").classList.remove("active");
-          document.getElementById("menu-users").classList.add("active");
-          loadUsers();
-        }
+        const loaders = {
+          products: loadProducts,
+          users: loadUsers,
+          orders: loadOrders,
+        };
+        Object.keys(loaders).forEach((name) => {
+          document
+            .getElementById(`tab-${name}`)
+            .classList.toggle("hidden", name !== tab);
+          document
+            .getElementById(`menu-${name}`)
+            .classList.toggle("active", name === tab);
+        });
+        loaders[tab]();
       }
 
       // --- HÀM QUẢN LÝ SẢN PHẨM ---
@@ -1314,6 +1371,118 @@
         else {
           const err = await res.json().catch(() => ({}));
           alert(err.detail || "Không thể xóa!");
+        }
+      }
+
+      // --- HÀM QUẢN LÝ ĐƠN HÀNG ---
+      const ORDER_STATUSES = {
+        pending: "Chờ xác nhận",
+        confirmed: "Đã xác nhận",
+        shipping: "Đang giao",
+        completed: "Hoàn thành",
+        cancelled: "Đã hủy",
+      };
+
+      function formatVnd(value) {
+        return Math.round(value).toLocaleString("vi-VN") + " ₫";
+      }
+
+      function formatOrderDate(isoString) {
+        // Backend lưu giờ UTC nhưng không kèm múi giờ
+        const hasZone = /Z|[+-]\d\d:\d\d$/.test(isoString);
+        return new Date(hasZone ? isoString : isoString + "Z").toLocaleString(
+          "vi-VN",
+        );
+      }
+
+      async function loadOrders() {
+        const res = await fetch("/admin/orders", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) return alert("Không thể lấy danh sách đơn hàng!");
+
+        const orders = await res.json();
+        document.getElementById("stat-total-orders").innerText = orders.length;
+        document.getElementById("stat-pending-orders").innerText =
+          orders.filter((o) => o.status === "pending").length;
+        document.getElementById("stat-revenue").innerText = formatVnd(
+          orders
+            .filter((o) => o.status === "completed")
+            .reduce((sum, o) => sum + o.total, 0),
+        );
+
+        const tbody = document.getElementById("order-list");
+        if (orders.length === 0) {
+          tbody.innerHTML = `<tr class="empty-row"><td colspan="7">Chưa có đơn hàng nào.</td></tr>`;
+          return;
+        }
+
+        tbody.innerHTML = orders
+          .map((o) => {
+            const items = o.items
+              .map((item) => {
+                const size = item.size ? ` (${escapeHtml(item.size)})` : "";
+                return `${escapeHtml(item.product_name)}${size} × ${item.quantity}`;
+              })
+              .join("<br>");
+            const note = o.note
+              ? `<br><em>Ghi chú: ${escapeHtml(o.note)}</em>`
+              : "";
+            const payment =
+              o.payment_method === "bank"
+                ? '<span class="badge badge-gold">Chuyển khoản</span>'
+                : '<span class="badge badge-quiet">COD</span>';
+            const options = Object.entries(ORDER_STATUSES)
+              .map(
+                ([value, label]) =>
+                  `<option value="${value}" ${value === o.status ? "selected" : ""}>${label}</option>`,
+              )
+              .join("");
+
+            return `
+                    <tr>
+                        <td><strong>DH${o.id}</strong></td>
+                        <td>
+                            <strong>${escapeHtml(o.full_name)}</strong><br>
+                            ${escapeHtml(o.phone)}<br>
+                            ${escapeHtml(o.address)}${note}
+                        </td>
+                        <td>${items}</td>
+                        <td><strong>${formatVnd(o.total)}</strong></td>
+                        <td>${payment}</td>
+                        <td>${formatOrderDate(o.created_at)}</td>
+                        <td>
+                            <select class="input-simple order-status" data-id="${o.id}" data-current="${o.status}">
+                                ${options}
+                            </select>
+                        </td>
+                    </tr>
+                `;
+          })
+          .join("");
+
+        document.querySelectorAll(".order-status").forEach((select) => {
+          select.addEventListener("change", () => updateOrderStatus(select));
+        });
+      }
+
+      async function updateOrderStatus(select) {
+        select.disabled = true;
+        try {
+          const res = await fetch(`/admin/orders/${select.dataset.id}/status`, {
+            method: "PUT",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ status: select.value }),
+          });
+          if (!res.ok) throw new Error();
+          loadOrders();
+        } catch (e) {
+          alert("Không thể cập nhật trạng thái đơn hàng!");
+          select.value = select.dataset.current;
+          select.disabled = false;
         }
       }
     </script>
