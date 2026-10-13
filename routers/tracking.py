@@ -1,5 +1,7 @@
+import math
 import os
 import secrets
+import time
 from datetime import datetime
 
 import requests
@@ -42,6 +44,62 @@ def _geocode(address: str):
     return None
 
 
+OSRM_URL = "https://router.project-osrm.org/route/v1/driving/{from_lng},{from_lat};{to_lng},{to_lat}"
+# Chỉ tính lại đường khi shipper đi thêm quá 30 m, và không quá 1 lần/20 giây
+# mỗi đơn, để không gọi OSRM (máy chủ miễn phí, giới hạn lượt) quá dày
+ROUTE_MIN_MOVE_M = 30
+ROUTE_MIN_INTERVAL_S = 20
+_route_cache = {}  # order_id -> (lat, lng, thời điểm tính, kết quả)
+
+
+def _distance_m(lat1, lng1, lat2, lng2):
+    r = 6371000
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dp, dl = p2 - p1, math.radians(lng2 - lng1)
+    a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    return 2 * r * math.asin(math.sqrt(a))
+
+
+def _road_route(order: Order):
+    """Đường đi theo phố từ shipper tới địa chỉ nhận (OSRM), None nếu không có."""
+    cached = _route_cache.get(order.id)
+    if cached:
+        lat, lng, computed_at, result = cached
+        moved = _distance_m(lat, lng, order.shipper_lat, order.shipper_lng)
+        if moved < ROUTE_MIN_MOVE_M or time.time() - computed_at < ROUTE_MIN_INTERVAL_S:
+            return result
+
+    try:
+        res = requests.get(
+            OSRM_URL.format(
+                from_lat=order.shipper_lat,
+                from_lng=order.shipper_lng,
+                to_lat=order.delivery_lat,
+                to_lng=order.delivery_lng,
+            ),
+            params={"overview": "full", "geometries": "geojson"},
+            headers=NOMINATIM_HEADERS,
+            timeout=6,
+        )
+        res.raise_for_status()
+        data = res.json()
+        route = data["routes"][0] if data.get("code") == "Ok" and data.get("routes") else None
+    except (requests.RequestException, ValueError, KeyError):
+        # Lỗi tạm thời: dùng lại đường cũ nếu có, app tự vẽ đường thẳng nếu không
+        return cached[3] if cached else None
+
+    result = None
+    if route:
+        result = {
+            # GeoJSON là [lng, lat]; app dùng [lat, lng]
+            "points": [[lat, lng] for lng, lat in route["geometry"]["coordinates"]],
+            "distance_m": round(route["distance"]),
+            "duration_s": round(route["duration"]),
+        }
+    _route_cache[order.id] = (order.shipper_lat, order.shipper_lng, time.time(), result)
+    return result
+
+
 def _ensure_destination(order: Order, db: Session):
     if order.geocoded:
         return
@@ -75,12 +133,17 @@ def get_order_tracking(
     _ensure_destination(order, db)
     # Chỉ lộ vị trí shipper khi đơn đang giao
     shipper = None
+    route = None
     if order.status == "shipping" and order.shipper_updated_at:
         shipper = _point(
             order.shipper_lat,
             order.shipper_lng,
             updated_at=order.shipper_updated_at.isoformat(),
         )
+        if shipper and order.delivery_lat is not None:
+            route = _road_route(order)
+    else:
+        _route_cache.pop(order.id, None)
     return {
         "order_id": order.id,
         "status": order.status,
@@ -89,6 +152,7 @@ def get_order_tracking(
             order.delivery_lat, order.delivery_lng, address=order.address
         ),
         "shipper": shipper,
+        "route": route,
     }
 
 
