@@ -539,6 +539,170 @@
         padding: 30px;
         font-size: 13.5px;
       }
+      /* Đủ rộng cho chữ dài nhất ("Chờ xác nhận") không bị cắt */
+      .order-status {
+        min-width: 150px;
+      }
+      /* ================= ĐIỆN THOẠI / MÀN HẸP ================= */
+      @media (max-width: 860px) {
+        /* Menu trái thành thanh trên cùng, dính khi cuộn */
+        .dashboard-container {
+          flex-direction: column;
+        }
+        .sidebar {
+          position: sticky;
+          top: 0;
+          z-index: 20;
+          width: 100%;
+          height: auto;
+          padding: 10px 12px;
+          flex-direction: row;
+          flex-wrap: wrap;
+          align-items: center;
+          gap: 8px;
+        }
+        .sidebar-brand {
+          font-size: 17px;
+          padding: 0 4px;
+          border-bottom: none;
+          flex: 1;
+        }
+        .btn-logout {
+          padding: 8px 12px;
+          font-size: 13px;
+        }
+        /* 3 mục chia đều, biểu tượng trên chữ: luôn thấy đủ, không phải vuốt */
+        .sidebar-menu {
+          order: 3;
+          width: 100%;
+          margin-top: 0;
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 6px;
+        }
+        .sidebar-menu li {
+          margin-bottom: 0;
+        }
+        .sidebar-menu a {
+          flex-direction: column;
+          gap: 4px;
+          padding: 8px 4px;
+          font-size: 12px;
+          line-height: 1.25;
+          text-align: center;
+        }
+        .main-content {
+          margin-left: 0;
+          padding: 20px 14px 40px;
+          max-width: none;
+          width: 100%;
+        }
+        .page-title {
+          font-size: 22px;
+        }
+        /* 3 ô thống kê gọn trên một hàng */
+        .stat-row {
+          grid-template-columns: repeat(3, 1fr);
+          gap: 8px;
+          margin-bottom: 18px;
+        }
+        .stat-card {
+          flex-direction: column;
+          align-items: flex-start;
+          gap: 8px;
+          padding: 12px;
+        }
+        .stat-icon {
+          width: 30px;
+          height: 30px;
+          font-size: 13px;
+        }
+        .stat-value {
+          font-size: 18px;
+        }
+        .stat-label {
+          font-size: 11.5px;
+        }
+        .card {
+          padding: 16px;
+        }
+        .actions-row {
+          flex-wrap: wrap;
+        }
+        .actions-row .btn {
+          flex: 1 1 auto;
+        }
+        /* iPhone tự phóng to trang khi chữ trong ô nhập nhỏ hơn 16px */
+        .input,
+        .input-simple {
+          font-size: 16px;
+        }
+
+        /* Bảng thành danh sách thẻ: mỗi dòng một thẻ, mỗi ô kèm tên cột */
+        .card:has(> .table-responsive) {
+          padding: 0;
+          background: transparent;
+          border: none;
+          overflow: visible !important;
+        }
+        table,
+        tbody,
+        tr,
+        td {
+          display: block;
+          width: 100%;
+        }
+        thead {
+          display: none;
+        }
+        tbody tr {
+          background: var(--card);
+          border: 1px solid var(--line);
+          border-radius: 12px;
+          padding: 6px 14px;
+          margin-bottom: 12px;
+        }
+        tbody tr:hover {
+          background: var(--card);
+        }
+        /* Nhãn cột nổi bên trái, nội dung (chữ, <br>, nút...) chảy tự nhiên
+           bên phải; không dùng flex vì sẽ tách từng đoạn chữ thành cột riêng */
+        td {
+          padding: 10px 0;
+          text-align: right;
+          overflow-wrap: anywhere;
+        }
+        td::after {
+          content: "";
+          display: block;
+          clear: both;
+        }
+        td::before {
+          content: attr(data-label);
+          float: left;
+          max-width: 38%;
+          margin-right: 12px;
+          text-align: left;
+          font-size: 12px;
+          font-weight: 600;
+          color: var(--text-muted);
+        }
+        tbody tr td:last-child {
+          border-bottom: none;
+        }
+        td .btn-action {
+          margin: 2px 0 2px 4px;
+        }
+        td .input-simple {
+          width: 58%;
+        }
+        .empty-row td {
+          text-align: center;
+        }
+        .empty-row td::before {
+          display: none;
+        }
+      }
     </style>
   </head>
   <body>
@@ -923,6 +1087,27 @@
     </div>
 
     <script>
+      // Màn hẹp hiển thị bảng dạng thẻ: gắn tên cột (lấy từ <th>) vào từng ô
+      // để CSS hiện nhãn. Tự chạy mỗi khi bảng được vẽ lại, không cần sửa
+      // từng hàm loadProducts / loadUsers / loadOrders.
+      function labelTableCells(tbody) {
+        const headers = [...tbody.closest("table").querySelectorAll("thead th")].map(
+          (th) => th.textContent.trim(),
+        );
+        tbody.querySelectorAll("tr").forEach((row) => {
+          [...row.children].forEach((cell, index) => {
+            if (cell.colSpan > 1) return;
+            cell.dataset.label = headers[index] || "";
+          });
+        });
+      }
+      document.querySelectorAll("table tbody").forEach((tbody) => {
+        labelTableCells(tbody);
+        new MutationObserver(() => labelTableCells(tbody)).observe(tbody, {
+          childList: true,
+        });
+      });
+
       let token = localStorage.getItem("admin_token");
       let editingProductId = null;
       let productsById = new Map();
@@ -1384,7 +1569,8 @@
       };
 
       function formatVnd(value) {
-        return Math.round(value).toLocaleString("vi-VN") + " ₫";
+        // Khoảng trắng không ngắt dòng: "₫" không bị rớt xuống dòng riêng
+        return Math.round(value).toLocaleString("vi-VN") + "\u00a0₫";
       }
 
       function formatOrderDate(isoString) {
