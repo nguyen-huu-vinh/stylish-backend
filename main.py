@@ -11,7 +11,19 @@ from database import (
     ensure_product_category_schema,
 )
 from security import get_password_hash
-from routers import auth, avatars, users, products, admin, categories, orders, tracking
+from routers import (
+    addresses,
+    admin,
+    auth,
+    avatars,
+    categories,
+    coupons,
+    orders,
+    products,
+    reviews,
+    tracking,
+    users,
+)
 
 Base.metadata.create_all(bind=engine)
 ensure_product_category_schema()
@@ -33,6 +45,9 @@ app.include_router(users.router)
 app.include_router(products.router)
 app.include_router(categories.router)
 app.include_router(orders.router)
+app.include_router(reviews.router)
+app.include_router(addresses.router)
+app.include_router(coupons.router)
 app.include_router(tracking.router)
 app.include_router(admin.router)
 

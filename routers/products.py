@@ -5,7 +5,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from dependencies import get_db, get_current_admin
-from models import Category, Product, User
+from models import Category, Product, Review, User
 from schemas import ProductSchema
 
 router = APIRouter(tags=["Products"])
@@ -45,6 +45,8 @@ def _product_response(product: Product):
         "stock": product.stock,
         "in_stock": product.stock is None or product.stock > 0,
         "sizes": product_sizes(product),
+        "rating": round(product.rating_avg, 1) if product.rating_avg else None,
+        "rating_count": product.rating_count or 0,
     }
 
 
@@ -137,6 +139,7 @@ def delete_product(product_id: int, db: Session = Depends(get_db),
     p = db.query(Product).filter(Product.id == product_id).first()
     if not p:
         raise HTTPException(status_code=404, detail="Không tìm thấy sản phẩm")
+    db.query(Review).filter(Review.product_id == product_id).delete()
     db.delete(p)
     db.commit()
     return {"message": "Đã xóa sản phẩm"}

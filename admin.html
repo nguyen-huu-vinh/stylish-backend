@@ -795,6 +795,11 @@
               <i class="fa-solid fa-receipt"></i> Quản Lý Đơn Hàng
             </a>
           </li>
+          <li>
+            <a href="#" id="menu-coupons" onclick="switchTab('coupons')">
+              <i class="fa-solid fa-ticket"></i> Mã Giảm Giá
+            </a>
+          </li>
         </ul>
         <button class="btn-logout" onclick="logout()">
           <i class="fa-solid fa-right-from-bracket"></i> Đăng Xuất
@@ -1105,6 +1110,83 @@
             </div>
           </div>
         </div>
+
+        <!-- TAB MÃ GIẢM GIÁ -->
+        <div id="tab-coupons" class="hidden">
+          <div class="page-header">
+            <h1 class="page-title">Mã Giảm Giá</h1>
+            <div class="page-sub">
+              Tạo mã giảm theo % hoặc số tiền cố định. Mỗi khách chỉ dùng một mã một lần.
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">
+              <i class="fa-solid fa-ticket"></i> Tạo Mã Mới
+            </div>
+            <div class="form-grid">
+              <div>
+                <label class="field-label-sm">Mã</label>
+                <input type="text" id="coupon-code" class="input-simple" placeholder="SALE10" maxlength="40" />
+              </div>
+              <div>
+                <label class="field-label-sm">Loại giảm</label>
+                <select id="coupon-type" class="input-simple">
+                  <option value="percent">Theo phần trăm (%)</option>
+                  <option value="fixed">Số tiền cố định (₫)</option>
+                </select>
+              </div>
+              <div>
+                <label class="field-label-sm">Giá trị</label>
+                <input type="number" id="coupon-value" class="input-simple" min="1" placeholder="10" />
+              </div>
+              <div>
+                <label class="field-label-sm">Đơn tối thiểu (₫)</label>
+                <input type="number" id="coupon-min" class="input-simple" min="0" placeholder="0" />
+              </div>
+              <div>
+                <label class="field-label-sm">Giảm tối đa (₫, chỉ với %)</label>
+                <input type="number" id="coupon-max" class="input-simple" min="1" placeholder="Không giới hạn" />
+              </div>
+              <div>
+                <label class="field-label-sm">Số lượt dùng tối đa</label>
+                <input type="number" id="coupon-limit" class="input-simple" min="1" placeholder="Không giới hạn" />
+              </div>
+              <div>
+                <label class="field-label-sm">Hết hạn</label>
+                <input type="datetime-local" id="coupon-expires" class="input-simple" />
+              </div>
+              <div>
+                <label class="field-label-sm">Mô tả (hiện cho khách)</label>
+                <input type="text" id="coupon-desc" class="input-simple" maxlength="200" placeholder="Giảm 10% đơn đầu tiên" />
+              </div>
+            </div>
+            <div class="actions-row">
+              <button onclick="saveCoupon()" class="btn btn-brick" style="padding: 10px 22px">
+                <i class="fa-solid fa-check"></i> Tạo Mã
+              </button>
+            </div>
+          </div>
+
+          <div class="card" style="padding: 0; overflow: hidden">
+            <div class="table-responsive">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Mã</th>
+                    <th>Ưu Đãi</th>
+                    <th>Điều Kiện</th>
+                    <th>Đã Dùng</th>
+                    <th>Hết Hạn</th>
+                    <th>Trạng Thái</th>
+                    <th>Hành Động</th>
+                  </tr>
+                </thead>
+                <tbody id="coupon-list"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -1194,6 +1276,7 @@
           products: loadProducts,
           users: loadUsers,
           orders: loadOrders,
+          coupons: loadCoupons,
         };
         Object.keys(loaders).forEach((name) => {
           document
@@ -1628,6 +1711,109 @@
         );
       }
 
+      // --- HÀM QUẢN LÝ MÃ GIẢM GIÁ ---
+      const authJson = () => ({
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      });
+
+      async function loadCoupons() {
+        const res = await fetch("/admin/coupons", { headers: authJson() });
+        if (!res.ok) return alert("Không thể lấy danh sách mã giảm giá!");
+        const coupons = await res.json();
+        const tbody = document.getElementById("coupon-list");
+        if (coupons.length === 0) {
+          tbody.innerHTML = `<tr class="empty-row"><td colspan="7">Chưa có mã giảm giá nào.</td></tr>`;
+          return;
+        }
+        tbody.innerHTML = coupons
+          .map((c) => {
+            const offer =
+              c.discount_type === "percent"
+                ? `${c.value}%${c.max_discount ? ` (tối đa ${formatVnd(c.max_discount)})` : ""}`
+                : formatVnd(c.value);
+            const expired = c.expires_at && new Date(c.expires_at + "Z") < new Date();
+            const full = c.usage_limit !== null && c.used_count >= c.usage_limit;
+            const status = !c.is_active
+              ? '<span class="badge badge-quiet">Đã tắt</span>'
+              : expired
+                ? '<span class="badge badge-brick">Hết hạn</span>'
+                : full
+                  ? '<span class="badge badge-brick">Hết lượt</span>'
+                  : '<span class="badge badge-gold">Đang chạy</span>';
+            return `
+              <tr>
+                <td><strong>${escapeHtml(c.code)}</strong><br><small>${escapeHtml(c.description || "")}</small></td>
+                <td>${offer}</td>
+                <td>Đơn từ ${formatVnd(c.min_order)}</td>
+                <td>${c.used_count}${c.usage_limit !== null ? ` / ${c.usage_limit}` : ""}</td>
+                <td>${c.expires_at ? formatOrderDate(c.expires_at) : "Không"}</td>
+                <td>${status}</td>
+                <td>
+                  <button class="btn-action btn-toggle" onclick="toggleCoupon(${c.id})">${c.is_active ? "Tắt" : "Bật"}</button>
+                  <button class="btn-action btn-delete" onclick="deleteCoupon(${c.id})">Xóa</button>
+                </td>
+              </tr>`;
+          })
+          .join("");
+        window.couponsById = new Map(coupons.map((c) => [c.id, c]));
+      }
+
+      async function saveCoupon() {
+        const num = (id) => {
+          const v = document.getElementById(id).value;
+          return v === "" ? null : Number(v);
+        };
+        const expires = document.getElementById("coupon-expires").value;
+        const body = {
+          code: document.getElementById("coupon-code").value.trim(),
+          description: document.getElementById("coupon-desc").value.trim() || null,
+          discount_type: document.getElementById("coupon-type").value,
+          value: num("coupon-value"),
+          min_order: num("coupon-min") ?? 0,
+          max_discount: num("coupon-max"),
+          usage_limit: num("coupon-limit"),
+          // datetime-local là giờ máy admin; backend lưu UTC
+          expires_at: expires ? new Date(expires).toISOString() : null,
+        };
+        const res = await fetch("/admin/coupons", {
+          method: "POST",
+          headers: authJson(),
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          return alert(
+            typeof err.detail === "string" ? err.detail : "Thông tin mã không hợp lệ!",
+          );
+        }
+        document
+          .querySelectorAll("#tab-coupons input")
+          .forEach((input) => (input.value = ""));
+        loadCoupons();
+      }
+
+      async function toggleCoupon(id) {
+        const c = window.couponsById.get(id);
+        const res = await fetch(`/admin/coupons/${id}`, {
+          method: "PUT",
+          headers: authJson(),
+          body: JSON.stringify({ ...c, is_active: !c.is_active }),
+        });
+        if (!res.ok) return alert("Không thể cập nhật mã giảm giá!");
+        loadCoupons();
+      }
+
+      async function deleteCoupon(id) {
+        if (!confirm("Xóa mã giảm giá này?")) return;
+        const res = await fetch(`/admin/coupons/${id}`, {
+          method: "DELETE",
+          headers: authJson(),
+        });
+        if (!res.ok) return alert("Không thể xóa mã giảm giá!");
+        loadCoupons();
+      }
+
       async function loadOrders() {
         const res = await fetch("/admin/orders", {
           headers: { Authorization: `Bearer ${token}` },
@@ -1681,7 +1867,11 @@
                             ${escapeHtml(o.address)}${note}
                         </td>
                         <td>${items}</td>
-                        <td><strong>${formatVnd(o.total)}</strong></td>
+                        <td><strong>${formatVnd(o.total)}</strong>${
+                          o.discount > 0
+                            ? `<br><small>Mã ${escapeHtml(o.coupon_code)}: -${formatVnd(o.discount)}</small>`
+                            : ""
+                        }</td>
                         <td>${payment}</td>
                         <td>${formatOrderDate(o.created_at)}</td>
                         <td>

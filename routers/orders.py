@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session, selectinload
 from config import BANK_ACCOUNT_NAME, BANK_ACCOUNT_NO, BANK_ID
 from dependencies import get_db, get_current_admin, get_current_user
 from models import Order, OrderEvent, OrderItem, Product, User
+from routers.coupons import calculate_discount, release_coupon, reuse_coupon
 from routers.products import product_sizes
 from schemas import OrderCancel, OrderCreate, OrderStatusUpdate
 
@@ -132,6 +133,8 @@ def _order_response(order: Order):
         "payment_method": order.payment_method,
         "status": order.status,
         "total": order.total,
+        "discount": order.discount or 0,
+        "coupon_code": order.coupon_code,
         "created_at": order.created_at.isoformat(),
         "bank_transfer": _bank_transfer(order),
         "timeline": _timeline(order),
@@ -196,6 +199,14 @@ def create_order(
         ))
     _take_stock(db, order_items)
 
+    subtotal = sum(item.unit_price * item.quantity for item in order_items)
+    coupon, discount = None, 0.0
+    if data.coupon_code and data.coupon_code.strip():
+        coupon, discount = calculate_discount(
+            db, data.coupon_code, subtotal, current_user, lock=True
+        )
+        coupon.used_count += 1
+
     note = data.note.strip() if data.note else None
     order = Order(
         user_id=current_user.id,
@@ -205,7 +216,9 @@ def create_order(
         note=note or None,
         payment_method=data.payment_method,
         status="pending",
-        total=sum(item.unit_price * item.quantity for item in order_items),
+        total=subtotal - discount,
+        discount=discount,
+        coupon_code=coupon.code if coupon else None,
         items=order_items,
         events=[OrderEvent(status="pending")],
     )
@@ -261,6 +274,7 @@ def cancel_my_order(
 
     reason = data.reason.strip() if data.reason else ""
     _return_stock(db, order.items)
+    release_coupon(db, order)
     order.status = "cancelled"
     order.events.append(OrderEvent(
         status="cancelled",
@@ -303,8 +317,10 @@ def update_order_status(
     # Hủy thì hoàn kho; mở lại đơn đã hủy thì phải trừ kho lại (có thể hết hàng)
     if data.status == "cancelled" and order.status != "cancelled":
         _return_stock(db, order.items)
+        release_coupon(db, order)
     elif order.status == "cancelled" and data.status != "cancelled":
         _take_stock(db, order.items)
+        reuse_coupon(db, order)
 
     order.status = data.status
     order.events.append(OrderEvent(status=data.status, note=note or None))

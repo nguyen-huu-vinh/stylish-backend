@@ -35,6 +35,8 @@ def ensure_order_tracking_schema():
         "shipper_lng": "FLOAT",
         "shipper_updated_at": "TIMESTAMP",
         "tracking_token": "VARCHAR",
+        "coupon_code": "VARCHAR",
+        "discount": "FLOAT NOT NULL DEFAULT 0",
     }
     with engine.begin() as connection:
         columns = {

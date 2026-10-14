@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from dependencies import get_db, get_current_admin
-from models import User
+from models import Address, Review, User
 from schemas import UserRegister, UserUpdate
 from security import get_password_hash
 
@@ -67,6 +67,8 @@ def delete_user(user_id: int, db: Session = Depends(get_db),
     if user.id == current_admin.id:
         raise HTTPException(status_code=400, detail="Không thể xóa tài khoản Admin đang đăng nhập!")
 
+    db.query(Review).filter(Review.user_id == user.id).delete()
+    db.query(Address).filter(Address.user_id == user.id).delete()
     db.delete(user)
     db.commit()
     return {"message": "Đã xóa tài khoản thành công"}

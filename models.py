@@ -9,8 +9,10 @@ from sqlalchemy import (
     Integer,
     LargeBinary,
     String,
+    UniqueConstraint,
 )
-from sqlalchemy.orm import deferred, relationship
+from sqlalchemy import func, select
+from sqlalchemy.orm import column_property, deferred, relationship
 from database import Base
 
 
@@ -105,6 +107,9 @@ class OrderDB(Base):
     shipper_updated_at = Column(DateTime, nullable=True)
     # Mã bí mật trong link gửi cho shipper, tạo khi đơn chuyển sang "shipping"
     tracking_token = Column(String, nullable=True)
+    # Mã giảm giá đã áp dụng và số tiền được giảm (total đã trừ khoản này)
+    coupon_code = Column(String, nullable=True)
+    discount = Column(Float, default=0, nullable=False, server_default="0")
 
     items = relationship(
         "OrderItemDB", back_populates="order", cascade="all, delete-orphan"
@@ -148,6 +153,75 @@ class OrderEventDB(Base):
     order = relationship("OrderDB", back_populates="events")
 
 
+class ReviewDB(Base):
+    """Đánh giá sản phẩm; mỗi người chỉ có một đánh giá cho mỗi sản phẩm."""
+
+    __tablename__ = "reviews"
+    __table_args__ = (UniqueConstraint("product_id", "user_id"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    product_id = Column(
+        Integer, ForeignKey("products.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    rating = Column(Integer, nullable=False)
+    comment = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    user = relationship("UserDB")
+
+
+class AddressDB(Base):
+    """Sổ địa chỉ giao hàng của người dùng."""
+
+    __tablename__ = "addresses"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    label = Column(String, nullable=True)  # VD: Nhà, Công ty
+    full_name = Column(String, nullable=False)
+    phone = Column(String, nullable=False)
+    address = Column(String, nullable=False)
+    lat = Column(Float, nullable=True)
+    lng = Column(Float, nullable=True)
+    is_default = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class CouponDB(Base):
+    __tablename__ = "coupons"
+
+    id = Column(Integer, primary_key=True, index=True)
+    code = Column(String, unique=True, nullable=False, index=True)  # luôn viết hoa
+    description = Column(String, nullable=True)
+    discount_type = Column(String, nullable=False)  # "percent" | "fixed"
+    value = Column(Float, nullable=False)
+    min_order = Column(Float, default=0, nullable=False)
+    max_discount = Column(Float, nullable=True)  # trần giảm khi theo %
+    usage_limit = Column(Integer, nullable=True)  # None = không giới hạn
+    used_count = Column(Integer, default=0, nullable=False)
+    expires_at = Column(DateTime, nullable=True)
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+# Điểm trung bình và số đánh giá, tính ngay trong câu SELECT sản phẩm để các
+# danh sách sản phẩm không bị truy vấn lặp từng dòng
+ProductDB.rating_avg = column_property(
+    select(func.avg(ReviewDB.rating))
+    .where(ReviewDB.product_id == ProductDB.id)
+    .correlate_except(ReviewDB)
+    .scalar_subquery()
+)
+ProductDB.rating_count = column_property(
+    select(func.count(ReviewDB.id))
+    .where(ReviewDB.product_id == ProductDB.id)
+    .correlate_except(ReviewDB)
+    .scalar_subquery()
+)
+
+
 # Alias để các router dùng tên ngắn
 Product = ProductDB
 Category = CategoryDB
@@ -157,3 +231,6 @@ Order = OrderDB
 OrderItem = OrderItemDB
 OrderEvent = OrderEventDB
 UserAvatar = UserAvatarDB
+Review = ReviewDB
+Address = AddressDB
+Coupon = CouponDB
