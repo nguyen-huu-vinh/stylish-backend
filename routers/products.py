@@ -10,6 +10,23 @@ from schemas import ProductSchema
 
 router = APIRouter(tags=["Products"])
 
+# Size dùng cho sản phẩm cũ chưa được admin nhập size riêng
+DEFAULT_SIZES = ["S", "M", "L", "XL"]
+
+
+def product_sizes(product: Product) -> list:
+    if product.sizes is None:
+        return list(DEFAULT_SIZES)
+    return [size for size in product.sizes.split(",") if size]
+
+
+def _product_fields(product: ProductSchema) -> dict:
+    data = product.model_dump()
+    sizes = data.pop("sizes")
+    # Không gửi size thì giữ mặc định; gửi danh sách rỗng = không có size
+    data["sizes"] = None if sizes is None else ",".join(sizes)
+    return data
+
 
 def _product_response(product: Product):
     return {
@@ -25,6 +42,9 @@ def _product_response(product: Product):
         "is_trending": product.is_trending,
         "category_id": product.category_id,
         "category": product.category_ref.name if product.category_ref else None,
+        "stock": product.stock,
+        "in_stock": product.stock is None or product.stock > 0,
+        "sizes": product_sizes(product),
     }
 
 
@@ -84,7 +104,7 @@ def create_product(product: ProductSchema, db: Session = Depends(get_db),
                    current_admin: User = Depends(get_current_admin)):
     if not db.query(Category).filter(Category.id == product.category_id).first():
         raise HTTPException(status_code=404, detail="Không tìm thấy danh mục")
-    new_p = Product(**product.model_dump())
+    new_p = Product(**_product_fields(product))
     db.add(new_p)
     db.commit()
     db.refresh(new_p)
@@ -104,7 +124,7 @@ def update_product(
     if not db.query(Category).filter(Category.id == product_data.category_id).first():
         raise HTTPException(status_code=404, detail="Không tìm thấy danh mục")
 
-    for field, value in product_data.model_dump().items():
+    for field, value in _product_fields(product_data).items():
         setattr(product, field, value)
     db.commit()
     db.refresh(product)

@@ -54,6 +54,23 @@ class ProductSchema(BaseModel):
     is_deal_of_the_day: bool = False
     is_trending: bool = False
     is_new: bool = False
+    # None = không giới hạn số lượng
+    stock: Optional[int] = Field(default=None, ge=0, le=1_000_000)
+    # None = dùng size mặc định; [] = sản phẩm không có size
+    sizes: Optional[list[str]] = Field(default=None, max_length=20)
+
+    @model_validator(mode="after")
+    def clean_sizes(self):
+        if self.sizes is not None:
+            cleaned = []
+            for size in self.sizes:
+                size = size.strip()
+                if "," in size or len(size) > 20:
+                    raise ValueError("Size không hợp lệ")
+                if size and size not in cleaned:
+                    cleaned.append(size)
+            self.sizes = cleaned
+        return self
 
     @model_validator(mode="after")
     def validate_deal_of_the_day(self):

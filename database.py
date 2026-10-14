@@ -46,6 +46,17 @@ def ensure_order_tracking_schema():
                 connection.execute(
                     text(f"ALTER TABLE orders ADD COLUMN {name} {column_type}")
                 )
+        item_columns = {
+            column["name"]
+            for column in inspect(connection).get_columns("order_items")
+        }
+        if "stock_deducted" not in item_columns:
+            connection.execute(
+                text(
+                    "ALTER TABLE order_items ADD COLUMN "
+                    "stock_deducted BOOLEAN NOT NULL DEFAULT FALSE"
+                )
+            )
 
 
 def ensure_product_category_schema():
@@ -80,6 +91,10 @@ def ensure_product_category_schema():
             connection.execute(
                 text("ALTER TABLE products ADD COLUMN is_new BOOLEAN DEFAULT FALSE")
             )
+        if "stock" not in columns:
+            connection.execute(text("ALTER TABLE products ADD COLUMN stock INTEGER"))
+        if "sizes" not in columns:
+            connection.execute(text("ALTER TABLE products ADD COLUMN sizes VARCHAR"))
 
     product_columns = {
         column["name"]

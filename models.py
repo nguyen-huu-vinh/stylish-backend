@@ -37,6 +37,11 @@ class ProductDB(Base):
     is_trending = Column(Boolean, default=False)
     category_id = Column(Integer, ForeignKey("categories.id"), nullable=True)
     category_ref = relationship("CategoryDB", back_populates="products")
+    # Số lượng còn trong kho; NULL = không giới hạn (sản phẩm cũ chưa nhập kho)
+    stock = Column(Integer, nullable=True)
+    # Các size cách nhau dấu phẩy, VD "S,M,L". NULL = chưa cấu hình (dùng size
+    # mặc định), chuỗi rỗng = sản phẩm không có size (VD mỹ phẩm)
+    sizes = Column(String, nullable=True)
 
 
 class UserDB(Base):
@@ -125,6 +130,8 @@ class OrderItemDB(Base):
     size = Column(String, nullable=True)
     unit_price = Column(Float, nullable=False)
     quantity = Column(Integer, nullable=False)
+    # Dòng này đã trừ kho chưa: chỉ hoàn kho khi hủy nếu trước đó đã trừ
+    stock_deducted = Column(Boolean, default=False, nullable=False)
     order = relationship("OrderDB", back_populates="items")
 
 

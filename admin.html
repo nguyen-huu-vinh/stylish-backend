@@ -883,6 +883,27 @@
                 </select>
               </div>
               <div>
+                <label class="field-label-sm">Tồn kho</label>
+                <input
+                  type="number"
+                  id="stock"
+                  class="input-simple"
+                  min="0"
+                  step="1"
+                  placeholder="Để trống = không giới hạn"
+                />
+              </div>
+              <div>
+                <label class="field-label-sm">Kích cỡ (cách nhau dấu phẩy)</label>
+                <input
+                  type="text"
+                  id="sizes"
+                  class="input-simple"
+                  value="S, M, L, XL"
+                  placeholder="Để trống nếu không có size (VD mỹ phẩm)"
+                />
+              </div>
+              <div>
                 <label class="field-label-sm">Mô tả</label>
                 <textarea
                   id="description"
@@ -938,6 +959,7 @@
                     <th>Danh mục</th>
                     <th>Giá niêm yết</th>
                     <th>Giá Sale</th>
+                    <th>Tồn kho</th>
                     <th>Trạng thái</th>
                     <th>Hành động</th>
                   </tr>
@@ -1221,7 +1243,7 @@
           products.filter((p) => p.is_trending).length;
 
         if (products.length === 0) {
-          tbody.innerHTML = `<tr class="empty-row"><td colspan="7">Chưa có sản phẩm nào. Thêm sản phẩm đầu tiên ở trên.</td></tr>`;
+          tbody.innerHTML = `<tr class="empty-row"><td colspan="8">Chưa có sản phẩm nào. Thêm sản phẩm đầu tiên ở trên.</td></tr>`;
           return;
         }
 
@@ -1247,6 +1269,13 @@
                         <td>${safeCategory}</td>
                         <td>${p.price.toLocaleString()}đ</td>
                         <td>${p.discount_price ? '<strong style="color:var(--brick-deep);">' + p.discount_price.toLocaleString() + "đ</strong>" : "-"}</td>
+                        <td>${
+                          p.stock === null || p.stock === undefined
+                            ? '<span class="badge badge-quiet">Không giới hạn</span>'
+                            : p.stock === 0
+                              ? '<span class="badge badge-brick">Hết hàng</span>'
+                              : p.stock
+                        }</td>
                         <td>${badges}</td>
                         <td>
                           <button class="btn-action btn-toggle" onclick="editProduct(${p.id})">
@@ -1286,6 +1315,13 @@
           return;
         }
 
+        const stockRaw = document.getElementById("stock").value.trim();
+        const stockValue = stockRaw === "" ? null : Number(stockRaw);
+        if (stockValue !== null && (!Number.isInteger(stockValue) || stockValue < 0)) {
+          alert("Tồn kho phải là số nguyên không âm (hoặc để trống)!");
+          return;
+        }
+
         const discountRaw = document.getElementById("discount_price").value;
         const data = {
           name,
@@ -1300,6 +1336,13 @@
             document.getElementById("is_deal_of_the_day").checked,
           is_trending: document.getElementById("is_trending").checked,
           is_new: document.getElementById("is_new").checked,
+          stock: stockValue,
+          // "S, M, L" -> ["S","M","L"]; để trống -> [] (không có size)
+          sizes: document
+            .getElementById("sizes")
+            .value.split(",")
+            .map((size) => size.trim())
+            .filter(Boolean),
         };
         if (
           data.is_deal_of_the_day &&
@@ -1361,6 +1404,8 @@
           product.is_trending,
         );
         document.getElementById("is_new").checked = Boolean(product.is_new);
+        document.getElementById("stock").value = product.stock ?? "";
+        document.getElementById("sizes").value = (product.sizes || []).join(", ");
         document.getElementById("product-form-title").textContent =
           `Sửa sản phẩm #${id}`;
         document.getElementById("save-product-button").innerHTML =
@@ -1387,6 +1432,8 @@
         document.getElementById("is_deal_of_the_day").checked = false;
         document.getElementById("is_trending").checked = false;
         document.getElementById("is_new").checked = false;
+        document.getElementById("stock").value = "";
+        document.getElementById("sizes").value = "S, M, L, XL";
         document.getElementById("product-form-title").textContent =
           "Thêm Sản Phẩm Mới";
         document.getElementById("save-product-button").innerHTML =

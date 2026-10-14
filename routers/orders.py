@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session, selectinload
 from config import BANK_ACCOUNT_NAME, BANK_ACCOUNT_NO, BANK_ID
 from dependencies import get_db, get_current_admin, get_current_user
 from models import Order, OrderEvent, OrderItem, Product, User
+from routers.products import product_sizes
 from schemas import OrderCancel, OrderCreate, OrderStatusUpdate
 
 router = APIRouter(tags=["Orders"])
@@ -16,6 +17,56 @@ def _sale_price(product: Product) -> float:
     if product.discount_price is not None and product.discount_price < product.price:
         return product.discount_price
     return product.price
+
+
+def _locked_products(db: Session, product_ids) -> dict:
+    # Khóa các dòng sản phẩm tới khi commit (PostgreSQL) để hai đơn đặt cùng
+    # lúc không cùng mua được món cuối cùng; SQLite bỏ qua FOR UPDATE
+    return {
+        product.id: product
+        for product in db.query(Product)
+        .filter(Product.id.in_(set(product_ids)))
+        .with_for_update()
+        .all()
+    }
+
+
+def _take_stock(db: Session, items) -> None:
+    """Trừ kho cho các dòng đơn; báo lỗi rõ ràng nếu không đủ hàng."""
+    products = _locked_products(db, [item.product_id for item in items])
+    needed = {}
+    for item in items:
+        product = products.get(item.product_id)
+        if product is not None and product.stock is not None:
+            needed[product.id] = needed.get(product.id, 0) + item.quantity
+
+    for product_id, quantity in needed.items():
+        product = products[product_id]
+        if product.stock < quantity:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f'"{product.name}" đã hết hàng'
+                    if product.stock <= 0
+                    else f'"{product.name}" chỉ còn {product.stock} sản phẩm'
+                ),
+            )
+
+    for item in items:
+        product = products.get(item.product_id)
+        if product is not None and product.stock is not None:
+            product.stock -= item.quantity
+            item.stock_deducted = True
+
+
+def _return_stock(db: Session, items) -> None:
+    """Hoàn kho cho các dòng đã trừ (khi đơn bị hủy)."""
+    products = _locked_products(db, [item.product_id for item in items])
+    for item in items:
+        product = products.get(item.product_id)
+        if item.stock_deducted and product is not None and product.stock is not None:
+            product.stock += item.quantity
+        item.stock_deducted = False
 
 
 def _bank_transfer_enabled() -> bool:
@@ -111,10 +162,7 @@ def create_order(
         )
 
     product_ids = {item.product_id for item in data.items}
-    products = {
-        product.id: product
-        for product in db.query(Product).filter(Product.id.in_(product_ids)).all()
-    }
+    products = _locked_products(db, product_ids)
     missing = product_ids - products.keys()
     if missing:
         raise HTTPException(
@@ -126,14 +174,27 @@ def create_order(
     order_items = []
     for item in data.items:
         product = products[item.product_id]
+        sizes = product_sizes(product)
+        size = item.size.strip() if item.size else None
+        if sizes and size not in sizes:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f'Vui lòng chọn size cho "{product.name}"'
+                    if not size
+                    else f'"{product.name}" không có size {size}, vui lòng chọn lại'
+                ),
+            )
         order_items.append(OrderItem(
             product_id=product.id,
             product_name=product.name,
             image_url=product.image_url,
-            size=item.size.strip() if item.size else None,
+            # Sản phẩm không có size (VD mỹ phẩm) thì bỏ qua size gửi lên
+            size=size if sizes else None,
             unit_price=_sale_price(product),
             quantity=item.quantity,
         ))
+    _take_stock(db, order_items)
 
     note = data.note.strip() if data.note else None
     order = Order(
@@ -199,6 +260,7 @@ def cancel_my_order(
         )
 
     reason = data.reason.strip() if data.reason else ""
+    _return_stock(db, order.items)
     order.status = "cancelled"
     order.events.append(OrderEvent(
         status="cancelled",
@@ -237,6 +299,12 @@ def update_order_status(
     # Chọn lại đúng trạng thái cũ mà không có ghi chú thì không tạo mốc mới
     if data.status == order.status and not note:
         return _admin_order_response(order)
+
+    # Hủy thì hoàn kho; mở lại đơn đã hủy thì phải trừ kho lại (có thể hết hàng)
+    if data.status == "cancelled" and order.status != "cancelled":
+        _return_stock(db, order.items)
+    elif order.status == "cancelled" and data.status != "cancelled":
+        _take_stock(db, order.items)
 
     order.status = data.status
     order.events.append(OrderEvent(status=data.status, note=note or None))
