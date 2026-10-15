@@ -5,13 +5,14 @@ import time
 from datetime import datetime
 
 import requests
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse
 from sqlalchemy.orm import Session
 
 from config import SHOP_LAT, SHOP_LNG, SHOP_NAME
 from dependencies import get_current_user, get_db
 from models import Order, OrderEvent, User
+from push import notify_order_status, record_order_notification
 from schemas import ShipperLocation, ShipperToken
 
 router = APIRouter(tags=["Order tracking"])
@@ -207,7 +208,12 @@ def update_shipper_location(
 
 
 @router.post("/shipper/orders/{order_id}/delivered")
-def mark_delivered(order_id: int, data: ShipperToken, db: Session = Depends(get_db)):
+def mark_delivered(
+    order_id: int,
+    data: ShipperToken,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
     order = _shipper_order(order_id, data.token, db)
     if order.status != "shipping":
         raise HTTPException(status_code=400, detail="Đơn không còn ở trạng thái đang giao")
@@ -215,5 +221,9 @@ def mark_delivered(order_id: int, data: ShipperToken, db: Session = Depends(get_
     order.events.append(OrderEvent(
         status="completed", note="Shipper đã giao hàng thành công",
     ))
+    record_order_notification(db, order.id, order.user_id, "completed")
     db.commit()
+    background_tasks.add_task(
+        notify_order_status, order.id, order.user_id, "completed"
+    )
     return {"ok": True}

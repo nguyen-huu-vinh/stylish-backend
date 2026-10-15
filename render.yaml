@@ -38,6 +38,8 @@ services:
         sync: false
       - key: BANK_ACCOUNT_NAME
         sync: false
+      - key: FIREBASE_SERVICE_ACCOUNT_JSON
+        sync: false
 
 databases:
   - name: stylish-db

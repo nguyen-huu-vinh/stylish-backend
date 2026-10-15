@@ -206,6 +206,39 @@ class CouponDB(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
 
+class DeviceTokenDB(Base):
+    """Token FCM của từng thiết bị để server đẩy thông báo tới đúng máy."""
+
+    __tablename__ = "device_tokens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    # Mỗi thiết bị có một token duy nhất; đổi tài khoản trên máy thì chuyển chủ
+    token = Column(String, unique=True, nullable=False)
+    platform = Column(String, nullable=True)  # android | ios
+    updated_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class NotificationDB(Base):
+    """Hộp thư thông báo trong app: lưu lại để xem lại kể cả khi không có push."""
+
+    __tablename__ = "notifications"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    title = Column(String, nullable=False)
+    body = Column(String, nullable=False)
+    order_id = Column(Integer, nullable=True)  # bấm vào thì mở đơn này
+    is_read = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
 # Điểm trung bình và số đánh giá, tính ngay trong câu SELECT sản phẩm để các
 # danh sách sản phẩm không bị truy vấn lặp từng dòng
 ProductDB.rating_avg = column_property(
@@ -234,3 +267,5 @@ UserAvatar = UserAvatarDB
 Review = ReviewDB
 Address = AddressDB
 Coupon = CouponDB
+DeviceToken = DeviceTokenDB
+Notification = NotificationDB

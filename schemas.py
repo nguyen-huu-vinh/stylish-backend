@@ -163,3 +163,8 @@ class CouponCreate(BaseModel):
 class CouponValidate(BaseModel):
     code: str = Field(min_length=1, max_length=40)
     subtotal: float = Field(ge=0)
+
+
+class DeviceTokenIn(BaseModel):
+    token: str = Field(min_length=10, max_length=4096)
+    platform: Optional[str] = Field(default=None, max_length=20)

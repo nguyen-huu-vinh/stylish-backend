@@ -33,3 +33,7 @@ SHOP_LNG = float(os.getenv("SHOP_LNG")) if os.getenv("SHOP_LNG") else None
 BANK_ID = os.getenv("BANK_ID")
 BANK_ACCOUNT_NO = os.getenv("BANK_ACCOUNT_NO")
 BANK_ACCOUNT_NAME = os.getenv("BANK_ACCOUNT_NAME")
+
+# Nội dung file JSON service account của Firebase (Project settings > Service
+# accounts > Generate new private key). Bỏ trống thì tắt tính năng push.
+FIREBASE_SERVICE_ACCOUNT_JSON = os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON")

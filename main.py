@@ -18,6 +18,8 @@ from routers import (
     avatars,
     categories,
     coupons,
+    devices,
+    notifications,
     orders,
     products,
     reviews,
@@ -48,6 +50,8 @@ app.include_router(orders.router)
 app.include_router(reviews.router)
 app.include_router(addresses.router)
 app.include_router(coupons.router)
+app.include_router(devices.router)
+app.include_router(notifications.router)
 app.include_router(tracking.router)
 app.include_router(admin.router)
 

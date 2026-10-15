@@ -1,11 +1,12 @@
 import secrets
 from urllib.parse import quote, urlencode
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.orm import Session, selectinload
 
 from config import BANK_ACCOUNT_NAME, BANK_ACCOUNT_NO, BANK_ID
 from dependencies import get_db, get_current_admin, get_current_user
+from push import notify_order_status, record_order_notification
 from models import Order, OrderEvent, OrderItem, Product, User
 from routers.coupons import calculate_discount, release_coupon, reuse_coupon
 from routers.products import product_sizes
@@ -223,6 +224,8 @@ def create_order(
         events=[OrderEvent(status="pending")],
     )
     db.add(order)
+    db.flush()  # có order.id để ghi vào thông báo
+    record_order_notification(db, order.id, order.user_id, "pending")
     db.commit()
     db.refresh(order)
     return _order_response(order)
@@ -303,6 +306,7 @@ def get_all_orders(
 def update_order_status(
     order_id: int,
     data: OrderStatusUpdate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_admin: User = Depends(get_current_admin),
 ):
@@ -326,6 +330,13 @@ def update_order_status(
     order.events.append(OrderEvent(status=data.status, note=note or None))
     if data.status == "shipping" and not order.tracking_token:
         order.tracking_token = secrets.token_urlsafe(16)
+    if data.status != "pending":
+        record_order_notification(db, order.id, order.user_id, order.status)
     db.commit()
     db.refresh(order)
+    # Gửi sau khi đã trả response để admin không phải chờ FCM
+    if data.status != "pending":
+        background_tasks.add_task(
+            notify_order_status, order.id, order.user_id, order.status
+        )
     return _admin_order_response(order)
