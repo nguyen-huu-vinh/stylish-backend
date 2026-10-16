@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from sqlalchemy import func
 from fastapi.middleware.cors import CORSMiddleware
 
 import models  # noqa: F401  (phải import để create_all thấy các bảng)
@@ -58,18 +59,21 @@ app.include_router(admin.router)
 
 @app.on_event("startup")
 def startup_db_check():
-    email = ADMIN_EMAIL or "admin@gmail.com"
-    password = ADMIN_PASSWORD or "Admin123456"
+    # Không có tài khoản admin mặc định: thiếu biến môi trường thì bỏ qua
     if not ADMIN_EMAIL or not ADMIN_PASSWORD:
-        print(f"[CẢNH BÁO] Đang dùng tài khoản admin mặc định ({email}). "
-              "Đặt ADMIN_EMAIL và ADMIN_PASSWORD khi deploy thật.")
+        print("[CẢNH BÁO] Chưa đặt ADMIN_EMAIL/ADMIN_PASSWORD nên không tạo "
+              "tài khoản admin.")
+        return
+    email = ADMIN_EMAIL.strip().lower()
 
     db = SessionLocal()
     try:
-        if not db.query(models.User).filter(models.User.email == email).first():
+        if not db.query(models.User).filter(
+            func.lower(models.User.email) == email
+        ).first():
             db.add(models.User(
                 email=email,
-                hashed_password=get_password_hash(password),
+                hashed_password=get_password_hash(ADMIN_PASSWORD),
                 full_name="Administrator",
                 is_admin=True,
             ))

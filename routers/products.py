@@ -1,8 +1,8 @@
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from dependencies import get_db, get_current_admin
 from models import Category, Product, Review, User
@@ -53,14 +53,17 @@ def _product_response(product: Product):
 @router.get("/products")
 def get_products(
     category: Optional[str] = None,
+    limit: int = Query(200, ge=1, le=500),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
 ):
-    query = db.query(Product)
+    query = db.query(Product).options(joinedload(Product.category_ref))
     if category is not None:
         query = query.join(Product.category_ref).filter(
             func.lower(Category.name) == category.strip().lower()
         )
-    return [_product_response(product) for product in query.all()]
+    products = query.order_by(Product.id).offset(offset).limit(limit).all()
+    return [_product_response(product) for product in products]
 
 
 @router.get("/trending")

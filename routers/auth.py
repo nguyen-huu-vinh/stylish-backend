@@ -22,7 +22,13 @@ from schemas import (
     UserProfileUpdate,
     UserRegister,
 )
-from security import verify_password, get_password_hash, create_access_token
+from ratelimit import rate_limit
+from security import (
+    create_access_token,
+    get_password_hash,
+    normalize_email,
+    verify_password,
+)
 
 router = APIRouter(tags=["Auth"])
 logger = logging.getLogger(__name__)
@@ -33,15 +39,22 @@ def _hash_reset_otp(user_id: int, otp: str) -> str:
     return hmac.new(SECRET_KEY.encode(), message, hashlib.sha256).hexdigest()
 
 
-@router.post("/register", status_code=201)
+@router.post(
+    "/register",
+    status_code=201,
+    dependencies=[Depends(rate_limit("register", 10, 3600))],
+)
 def register(user_data: UserRegister, db: Session = Depends(get_db)):
-    if db.query(User).filter(User.email == user_data.email).first():
+    email = normalize_email(user_data.email)
+    if not email or "@" not in email:
+        raise HTTPException(status_code=400, detail="Email không hợp lệ")
+    if db.query(User).filter(func.lower(User.email) == email).first():
         raise HTTPException(status_code=400, detail="Email này đã được sử dụng!")
     if len(user_data.password) < 6:
         raise HTTPException(status_code=400, detail="Mật khẩu phải có ít nhất 6 ký tự!")
 
     new_user = User(
-        email=user_data.email,
+        email=email,
         hashed_password=get_password_hash(user_data.password),
         full_name=user_data.full_name,
         is_admin=False,
@@ -52,9 +65,13 @@ def register(user_data: UserRegister, db: Session = Depends(get_db)):
     return {"message": "Đăng ký tài khoản thành công!", "user_id": new_user.id}
 
 
-@router.post("/login")
+@router.post("/login", dependencies=[Depends(rate_limit("login", 10, 60))])
 def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.email == form_data.username).first()
+    user = (
+        db.query(User)
+        .filter(func.lower(User.email) == normalize_email(form_data.username))
+        .first()
+    )
     if not user or not verify_password(form_data.password, user.hashed_password):
         raise HTTPException(status_code=400, detail="Email hoặc mật khẩu không chính xác")
 
@@ -62,7 +79,7 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
     return {"access_token": access_token, "token_type": "bearer", "is_admin": user.is_admin}
 
 
-@router.post("/login/google")
+@router.post("/login/google", dependencies=[Depends(rate_limit("google", 20, 60))])
 def login_google(data: GoogleLogin, db: Session = Depends(get_db)):
     """Đăng nhập bằng Google: app gửi ID token, server nhờ Google xác minh."""
     if not GOOGLE_CLIENT_IDS:
@@ -180,15 +197,23 @@ def change_password(
     return {"message": "Đổi mật khẩu thành công"}
 
 
-@router.post("/forgot-password")
+@router.post(
+    "/forgot-password",
+    dependencies=[Depends(rate_limit("forgot", 5, 600))],
+)
 def forgot_password(request: ForgotPasswordRequest, db: Session = Depends(get_db)):
     if not is_mailtrap_configured():
         raise HTTPException(status_code=503, detail="Mailtrap chưa được cấu hình")
 
     message = "Nếu email đã đăng ký, mã OTP sẽ được gửi đến email đó."
-    user = db.query(User).filter(User.email == request.email).first()
+    user = (
+        db.query(User)
+        .filter(func.lower(User.email) == normalize_email(request.email))
+        .first()
+    )
     if user is None:
-        raise HTTPException(status_code=404, detail="Email chưa được đăng ký")
+        # Trả cùng một thông báo để không lộ email nào đã đăng ký
+        return {"message": message}
 
     now = datetime.utcnow()
     reset_record = (
@@ -230,12 +255,19 @@ def forgot_password(request: ForgotPasswordRequest, db: Session = Depends(get_db
     return {"message": message}
 
 
-@router.post("/reset-password")
+@router.post(
+    "/reset-password",
+    dependencies=[Depends(rate_limit("reset", 10, 600))],
+)
 def reset_password(request: ResetPasswordRequest, db: Session = Depends(get_db)):
     if len(request.new_password) < 6:
         raise HTTPException(status_code=400, detail="Mật khẩu mới phải có ít nhất 6 ký tự!")
 
-    user = db.query(User).filter(User.email == request.email).first()
+    user = (
+        db.query(User)
+        .filter(func.lower(User.email) == normalize_email(request.email))
+        .first()
+    )
     reset_record = None
     if user:
         reset_record = (

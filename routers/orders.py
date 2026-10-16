@@ -1,7 +1,7 @@
 import secrets
 from urllib.parse import quote, urlencode
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, selectinload
 
 from config import BANK_ACCOUNT_NAME, BANK_ACCOUNT_NO, BANK_ID
@@ -288,8 +288,20 @@ def cancel_my_order(
     return _order_response(order)
 
 
+# Các bước chuyển trạng thái hợp lệ; đơn đã hoàn thành/hủy là trạng thái cuối
+_NEXT_STATUS = {
+    "pending": ("confirmed", "shipping", "cancelled"),
+    "confirmed": ("shipping", "cancelled"),
+    "shipping": ("completed", "cancelled"),
+    "completed": (),
+    "cancelled": (),
+}
+
+
 @router.get("/admin/orders")
 def get_all_orders(
+    limit: int = Query(200, ge=1, le=500),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     current_admin: User = Depends(get_current_admin),
 ):
@@ -297,6 +309,8 @@ def get_all_orders(
         db.query(Order)
         .options(selectinload(Order.items), selectinload(Order.events))
         .order_by(Order.created_at.desc())
+        .offset(offset)
+        .limit(limit)
         .all()
     )
     return [_admin_order_response(order) for order in orders]
@@ -317,6 +331,14 @@ def update_order_status(
     # Chọn lại đúng trạng thái cũ mà không có ghi chú thì không tạo mốc mới
     if data.status == order.status and not note:
         return _admin_order_response(order)
+
+    if data.status != order.status and data.status not in _NEXT_STATUS.get(
+        order.status, ()
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Không thể chuyển đơn từ '{order.status}' sang '{data.status}'",
+        )
 
     # Hủy thì hoàn kho; mở lại đơn đã hủy thì phải trừ kho lại (có thể hết hàng)
     if data.status == "cancelled" and order.status != "cancelled":
