@@ -252,7 +252,12 @@ def get_order_detail(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    order = db.query(Order).filter(Order.id == order_id).first()
+    order = (
+        db.query(Order)
+        .options(selectinload(Order.items), selectinload(Order.events))
+        .filter(Order.id == order_id)
+        .first()
+    )
     # Trả 404 cả khi đơn của người khác để không lộ đơn tồn tại
     if not order or (order.user_id != current_user.id and not current_user.is_admin):
         raise HTTPException(status_code=404, detail="Không tìm thấy đơn hàng")

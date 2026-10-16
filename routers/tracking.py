@@ -7,7 +7,7 @@ from datetime import datetime
 import requests
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from config import SHOP_LAT, SHOP_LNG, SHOP_NAME
 from dependencies import get_current_user, get_db
@@ -97,6 +97,8 @@ def _road_route(order: Order):
             "distance_m": round(route["distance"]),
             "duration_s": round(route["duration"]),
         }
+    if len(_route_cache) >= 500:
+        _route_cache.pop(next(iter(_route_cache)))
     _route_cache[order.id] = (order.shipper_lat, order.shipper_lng, time.time(), result)
     return result
 
@@ -127,7 +129,12 @@ def get_order_tracking(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    order = db.query(Order).filter(Order.id == order_id).first()
+    order = (
+        db.query(Order)
+        .options(selectinload(Order.items), selectinload(Order.events))
+        .filter(Order.id == order_id)
+        .first()
+    )
     if not order or (order.user_id != current_user.id and not current_user.is_admin):
         raise HTTPException(status_code=404, detail="Không tìm thấy đơn hàng")
 

@@ -89,3 +89,9 @@ def test_shipper_token_via_header(client, admin, user, product):
         assert ok.status_code == 200
     bad = client.get(f"/shipper/orders/{oid}", headers={"X-Shipper-Token": "x" * 20})
     assert bad.status_code == 404
+
+
+def test_users_list_does_not_leak_password_hash(client, admin):
+    r = client.get("/users", headers=admin)
+    assert r.status_code == 200
+    assert "hashed_password" not in r.text

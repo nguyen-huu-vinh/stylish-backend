@@ -12,7 +12,15 @@ router = APIRouter(prefix="/users", tags=["Users"])
 
 @router.get("")
 def get_all_users(db: Session = Depends(get_db), current_admin: User = Depends(get_current_admin)):
-    return db.query(User).all()
+    return [
+        {
+            "id": u.id,
+            "email": u.email,
+            "full_name": u.full_name,
+            "is_admin": u.is_admin,
+        }
+        for u in db.query(User).all()
+    ]
 
 
 @router.post("")
