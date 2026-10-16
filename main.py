@@ -1,6 +1,9 @@
+import logging
+import time
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from sqlalchemy import func
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -41,6 +44,33 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(title="E-Commerce API", lifespan=lifespan)
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
+logger = logging.getLogger("stylish")
+
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    started = time.perf_counter()
+    try:
+        response = await call_next(request)
+    except Exception:
+        # Lỗi không lường trước: ghi đủ stack trace, trả lỗi gọn cho client
+        logger.exception("Unhandled error on %s %s", request.method, request.url.path)
+        return JSONResponse(
+            status_code=500, content={"detail": "Lỗi hệ thống, vui lòng thử lại sau"}
+        )
+    elapsed = (time.perf_counter() - started) * 1000
+    if request.url.path != "/health":
+        logger.info(
+            "%s %s -> %s (%.0f ms)",
+            request.method, request.url.path, response.status_code, elapsed,
+        )
+    return response
+
 
 app.add_middleware(
     CORSMiddleware,

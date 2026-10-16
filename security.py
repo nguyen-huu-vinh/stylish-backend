@@ -7,6 +7,13 @@ from config import SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
+def issue_token(user) -> str:
+    """Token đăng nhập gắn với phiên bản token hiện tại của người dùng."""
+    return create_access_token(
+        data={"sub": user.email, "tv": user.token_version or 0}
+    )
+
+
 def verify_password(plain_password, hashed_password):
     return pwd_context.verify(plain_password, hashed_password)
 

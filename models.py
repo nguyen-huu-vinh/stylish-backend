@@ -57,6 +57,8 @@ class UserDB(Base):
     hashed_password = Column(String, nullable=False)
     full_name = Column(String, nullable=True)
     is_admin = Column(Boolean, default=False)
+    # Tăng lên để thu hồi mọi token đã cấp (đăng xuất khỏi tất cả thiết bị)
+    token_version = Column(Integer, default=0, nullable=False, server_default="0")
     avatar = relationship(
         "UserAvatarDB", uselist=False, cascade="all, delete-orphan"
     )

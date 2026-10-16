@@ -26,7 +26,7 @@ from schemas import (
 from ratelimit import rate_limit
 from security import (
     check_password_strength,
-    create_access_token,
+    issue_token,
     get_password_hash,
     normalize_email,
     verify_password,
@@ -76,7 +76,7 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
     if not user or not verify_password(form_data.password, user.hashed_password):
         raise HTTPException(status_code=400, detail="Email hoặc mật khẩu không chính xác")
 
-    access_token = create_access_token(data={"sub": user.email})
+    access_token = issue_token(user)
     return {"access_token": access_token, "token_type": "bearer", "is_admin": user.is_admin}
 
 
@@ -120,7 +120,7 @@ def login_google(data: GoogleLogin, db: Session = Depends(get_db)):
         db.commit()
         db.refresh(user)
 
-    access_token = create_access_token(data={"sub": user.email})
+    access_token = issue_token(user)
     return {"access_token": access_token, "token_type": "bearer", "is_admin": user.is_admin}
 
 
@@ -167,7 +167,7 @@ def update_me(
             raise HTTPException(status_code=409, detail="Email này đã được sử dụng")
         if email != current_user.email:
             current_user.email = email
-            new_token = create_access_token(data={"sub": email})
+            new_token = issue_token(current_user)
 
     db.commit()
     db.refresh(current_user)
@@ -180,6 +180,17 @@ def update_me(
         "access_token": new_token,
         "token_type": "bearer" if new_token else None,
     }
+
+
+@router.post("/logout-all")
+def logout_all_devices(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Thu hồi mọi token đã cấp, kể cả token của thiết bị này."""
+    current_user.token_version = (current_user.token_version or 0) + 1
+    db.commit()
+    return {"message": "Đã đăng xuất khỏi tất cả thiết bị"}
 
 
 @router.post("/change-password")
@@ -297,6 +308,8 @@ def reset_password(request: ResetPasswordRequest, db: Session = Depends(get_db))
         raise invalid_otp
 
     user.hashed_password = get_password_hash(request.new_password)
+    # Đặt lại mật khẩu thì các phiên cũ phải hết hiệu lực
+    user.token_version = (user.token_version or 0) + 1
     db.delete(reset_record)
     db.commit()
     return {"message": "Đặt lại mật khẩu thành công"}

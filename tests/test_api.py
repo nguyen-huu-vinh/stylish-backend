@@ -123,3 +123,9 @@ def test_order_is_geocoded_in_background(client, user, product):
     oid = client.post("/orders", json=order_body(product), headers=user).json()["id"]
     track = client.get(f"/orders/{oid}/tracking", headers=user).json()
     assert track["destination"]["lat"] == 10.0
+
+
+def test_logout_all_revokes_tokens(client, user):
+    assert client.get("/me", headers=user).status_code == 200
+    assert client.post("/logout-all", headers=user).status_code == 200
+    assert client.get("/me", headers=user).status_code == 401

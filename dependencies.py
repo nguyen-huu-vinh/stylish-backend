@@ -31,6 +31,8 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     user = db.query(User).filter(func.lower(User.email) == email.strip().lower()).first()
     if user is None:
         raise HTTPException(status_code=404, detail="User không tồn tại")
+    if payload.get("tv", 0) != (user.token_version or 0):
+        raise HTTPException(status_code=401, detail="Phiên đăng nhập đã hết hạn")
     return user
 
 

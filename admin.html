@@ -496,6 +496,10 @@
         background: #f5ecd7;
         color: #8a6c33;
       }
+      .badge-sage {
+        background: #e3ecde;
+        color: #44593f;
+      }
       .badge-quiet {
         background: #ece7de;
         color: #6a6068;
@@ -1087,6 +1091,13 @@
               <div>
                 <div class="stat-value" id="stat-revenue">0 ₫</div>
                 <div class="stat-label">Doanh thu (đơn hoàn thành)</div>
+              </div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-icon brick"><i class="fa-solid fa-money-bill-wave"></i></div>
+              <div>
+                <div class="stat-value" id="stat-unpaid-orders">0</div>
+                <div class="stat-label">Chưa thu tiền</div>
               </div>
             </div>
           </div>
@@ -1698,6 +1709,15 @@
         cancelled: "Đã hủy",
       };
 
+      // Khớp bảng chuyển trạng thái hợp lệ ở server
+      const NEXT_STATUSES = {
+        pending: ["confirmed", "shipping", "cancelled"],
+        confirmed: ["shipping", "cancelled"],
+        shipping: ["completed", "cancelled"],
+        completed: [],
+        cancelled: [],
+      };
+
       function formatVnd(value) {
         // Khoảng trắng không ngắt dòng: "₫" không bị rớt xuống dòng riêng
         return Math.round(value).toLocaleString("vi-VN") + "\u00a0₫";
@@ -1821,6 +1841,9 @@
         if (!res.ok) return alert("Không thể lấy danh sách đơn hàng!");
 
         const orders = await res.json();
+        document.getElementById("stat-unpaid-orders").innerText = orders.filter(
+          (o) => !o.paid && o.status !== "cancelled",
+        ).length;
         document.getElementById("stat-total-orders").innerText = orders.length;
         document.getElementById("stat-pending-orders").innerText =
           orders.filter((o) => o.status === "pending").length;
@@ -1851,7 +1874,9 @@
               o.payment_method === "bank"
                 ? '<span class="badge badge-gold">Chuyển khoản</span>'
                 : '<span class="badge badge-quiet">COD</span>';
+            const allowed = [o.status, ...(NEXT_STATUSES[o.status] || [])];
             const options = Object.entries(ORDER_STATUSES)
+              .filter(([value]) => allowed.includes(value))
               .map(
                 ([value, label]) =>
                   `<option value="${value}" ${value === o.status ? "selected" : ""}>${label}</option>`,
@@ -1872,7 +1897,21 @@
                             ? `<br><small>Mã ${escapeHtml(o.coupon_code)}: -${formatVnd(o.discount)}</small>`
                             : ""
                         }</td>
-                        <td>${payment}</td>
+                        <td>
+                            ${payment}<br>
+                            ${
+                              o.paid
+                                ? '<span class="badge badge-sage">Đã thu tiền</span>'
+                                : '<span class="badge badge-quiet">Chưa thu</span>'
+                            }
+                            ${
+                              o.status !== "cancelled"
+                                ? `<br><button class="btn-action btn-toggle paid-btn" style="margin-top:6px" data-id="${o.id}" data-paid="${o.paid}">
+                                     ${o.paid ? "Bỏ xác nhận" : "Đã nhận tiền"}
+                                   </button>`
+                                : ""
+                            }
+                        </td>
                         <td>${formatOrderDate(o.created_at)}</td>
                         <td>
                             <select class="input-simple order-status" data-id="${o.id}" data-current="${o.status}">
@@ -1894,6 +1933,9 @@
         document.querySelectorAll(".order-status").forEach((select) => {
           select.addEventListener("change", () => updateOrderStatus(select));
         });
+        document.querySelectorAll(".paid-btn").forEach((btn) => {
+          btn.addEventListener("click", () => toggleOrderPaid(btn));
+        });
         document.querySelectorAll(".shipper-link-btn").forEach((btn) => {
           btn.addEventListener("click", () => copyShipperLink(btn));
         });
@@ -1907,6 +1949,22 @@
           alert("Đã sao chép link giao hàng. Gửi link này cho shipper (Zalo, SMS...):\n\n" + link);
         } catch (e) {
           prompt("Sao chép link này và gửi cho shipper:", link);
+        }
+      }
+
+      async function toggleOrderPaid(btn) {
+        btn.disabled = true;
+        const next = btn.dataset.paid !== "true";
+        try {
+          const res = await fetch(
+            `/admin/orders/${btn.dataset.id}/paid?paid=${next}`,
+            { method: "PUT", headers: { Authorization: `Bearer ${token}` } },
+          );
+          if (!res.ok) throw new Error();
+          loadOrders();
+        } catch (e) {
+          alert("Không thể cập nhật trạng thái thanh toán!");
+          btn.disabled = false;
         }
       }
 
@@ -1930,10 +1988,13 @@
             },
             body: JSON.stringify({ status: select.value, note: note.trim() || null }),
           });
-          if (!res.ok) throw new Error();
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.detail || "");
+          }
           loadOrders();
         } catch (e) {
-          alert("Không thể cập nhật trạng thái đơn hàng!");
+          alert(e.message || "Không thể cập nhật trạng thái đơn hàng!");
           select.value = select.dataset.current;
           select.disabled = false;
         }

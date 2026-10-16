@@ -50,6 +50,16 @@ def ensure_order_tracking_schema():
                 connection.execute(
                     text(f"ALTER TABLE orders ADD COLUMN {name} {column_type}")
                 )
+        user_columns = {
+            column["name"] for column in inspect(connection).get_columns("users")
+        }
+        if "token_version" not in user_columns:
+            connection.execute(
+                text(
+                    "ALTER TABLE users ADD COLUMN "
+                    "token_version INTEGER NOT NULL DEFAULT 0"
+                )
+            )
         item_columns = {
             column["name"]
             for column in inspect(connection).get_columns("order_items")
