@@ -34,6 +34,14 @@ BANK_ID = os.getenv("BANK_ID")
 BANK_ACCOUNT_NO = os.getenv("BANK_ACCOUNT_NO")
 BANK_ACCOUNT_NAME = os.getenv("BANK_ACCOUNT_NAME")
 
+# Các OAuth client ID của Google được phép đăng nhập (web/server, iOS, Android),
+# cách nhau dấu phẩy. Bỏ trống thì tắt đăng nhập Google.
+GOOGLE_CLIENT_IDS = [
+    cid.strip()
+    for cid in os.getenv("GOOGLE_CLIENT_IDS", "").split(",")
+    if cid.strip()
+]
+
 # Nội dung file JSON service account của Firebase (Project settings > Service
 # accounts > Generate new private key). Bỏ trống thì tắt tính năng push.
 FIREBASE_SERVICE_ACCOUNT_JSON = os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON")

@@ -4,16 +4,19 @@ import logging
 import secrets
 from datetime import datetime, timedelta
 
+import requests
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import OAuth2PasswordRequestForm
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from config import SECRET_KEY
+from config import GOOGLE_CLIENT_IDS, SECRET_KEY
 from dependencies import get_db, get_current_user
 from mailtrap import is_mailtrap_configured, send_password_reset_otp
 from models import PasswordResetOTP, User
 from schemas import (
     ForgotPasswordRequest,
+    GoogleLogin,
     PasswordChange,
     ResetPasswordRequest,
     UserProfileUpdate,
@@ -54,6 +57,50 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
     user = db.query(User).filter(User.email == form_data.username).first()
     if not user or not verify_password(form_data.password, user.hashed_password):
         raise HTTPException(status_code=400, detail="Email hoặc mật khẩu không chính xác")
+
+    access_token = create_access_token(data={"sub": user.email})
+    return {"access_token": access_token, "token_type": "bearer", "is_admin": user.is_admin}
+
+
+@router.post("/login/google")
+def login_google(data: GoogleLogin, db: Session = Depends(get_db)):
+    """Đăng nhập bằng Google: app gửi ID token, server nhờ Google xác minh."""
+    if not GOOGLE_CLIENT_IDS:
+        raise HTTPException(status_code=503, detail="Đăng nhập Google chưa được bật")
+    try:
+        res = requests.get(
+            "https://oauth2.googleapis.com/tokeninfo",
+            params={"id_token": data.id_token},
+            timeout=10,
+        )
+    except requests.RequestException:
+        raise HTTPException(status_code=502, detail="Không kết nối được tới Google")
+    if res.status_code != 200:
+        raise HTTPException(status_code=401, detail="Phiên đăng nhập Google không hợp lệ")
+
+    info = res.json()
+    # Token phải cấp cho chính app này, không phải app khác
+    if info.get("aud") not in GOOGLE_CLIENT_IDS:
+        raise HTTPException(status_code=401, detail="Phiên đăng nhập Google không hợp lệ")
+    email = (info.get("email") or "").strip().lower()
+    # Chỉ gộp vào tài khoản có sẵn khi Google đã xác minh email, tránh bị
+    # chiếm tài khoản bằng một email Google chưa xác minh
+    if not email or str(info.get("email_verified")).lower() != "true":
+        raise HTTPException(status_code=401, detail="Email Google chưa được xác minh")
+
+    user = db.query(User).filter(func.lower(User.email) == email).first()
+    if not user:
+        user = User(
+            email=email,
+            # Mật khẩu ngẫu nhiên không ai biết: chỉ vào được qua Google hoặc
+            # "Quên mật khẩu"
+            hashed_password=get_password_hash(secrets.token_urlsafe(32)),
+            full_name=info.get("name"),
+            is_admin=False,
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
 
     access_token = create_access_token(data={"sub": user.email})
     return {"access_token": access_token, "token_type": "bearer", "is_admin": user.is_admin}

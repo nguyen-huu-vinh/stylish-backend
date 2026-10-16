@@ -165,6 +165,10 @@ class CouponValidate(BaseModel):
     subtotal: float = Field(ge=0)
 
 
+class GoogleLogin(BaseModel):
+    id_token: str = Field(min_length=20, max_length=4096)
+
+
 class DeviceTokenIn(BaseModel):
     token: str = Field(min_length=10, max_length=4096)
     platform: Optional[str] = Field(default=None, max_length=20)
