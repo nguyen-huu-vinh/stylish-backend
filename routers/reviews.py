@@ -42,7 +42,11 @@ def _has_purchased(db: Session, user_id: int, product_id: int) -> bool:
 
 
 def _get_product(db: Session, product_id: int) -> Product:
-    product = db.query(Product).filter(Product.id == product_id).first()
+    product = (
+        db.query(Product)
+        .filter(Product.id == product_id, Product.is_active == True)
+        .first()
+    )
     if not product:
         raise HTTPException(status_code=404, detail="Không tìm thấy sản phẩm")
     return product

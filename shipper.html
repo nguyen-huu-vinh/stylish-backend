@@ -132,7 +132,9 @@
           return;
         }
         try {
-          const res = await fetch(`/shipper/orders/${orderId}?token=${encodeURIComponent(token)}`);
+          const res = await fetch(`/shipper/orders/${orderId}`, {
+            headers: { "X-Shipper-Token": token },
+          });
           const data = await res.json();
           if (!res.ok) throw new Error(data.detail || "Không tải được đơn hàng");
 

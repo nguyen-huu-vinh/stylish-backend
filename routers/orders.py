@@ -167,7 +167,7 @@ def create_order(
 
     product_ids = {item.product_id for item in data.items}
     products = _locked_products(db, product_ids)
-    missing = product_ids - products.keys()
+    missing = product_ids - {pid for pid, p in products.items() if p.is_active}
     if missing:
         raise HTTPException(
             status_code=400,

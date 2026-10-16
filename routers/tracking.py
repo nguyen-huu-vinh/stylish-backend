@@ -5,7 +5,7 @@ import time
 from datetime import datetime
 
 import requests
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse
 from sqlalchemy.orm import Session
 
@@ -178,8 +178,13 @@ def get_shipper_page():
 
 
 @router.get("/shipper/orders/{order_id}")
-def get_shipper_order(order_id: int, token: str, db: Session = Depends(get_db)):
-    order = _shipper_order(order_id, token, db)
+def get_shipper_order(
+    order_id: int,
+    x_shipper_token: str = Header(..., min_length=10, max_length=100),
+    db: Session = Depends(get_db),
+):
+    # Token gửi qua header (không đặt trên URL) để không lọt vào log truy cập
+    order = _shipper_order(order_id, x_shipper_token, db)
     return {
         "id": order.id,
         "code": f"DH{order.id}",

@@ -44,6 +44,8 @@ class ProductDB(Base):
     # Các size cách nhau dấu phẩy, VD "S,M,L". NULL = chưa cấu hình (dùng size
     # mặc định), chuỗi rỗng = sản phẩm không có size (VD mỹ phẩm)
     sizes = Column(String, nullable=True)
+    # Xóa mềm: sản phẩm bị ẩn khỏi cửa hàng nhưng đơn cũ vẫn tham chiếu được
+    is_active = Column(Boolean, default=True, nullable=False, server_default="1")
 
 
 class UserDB(Base):

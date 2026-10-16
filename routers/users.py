@@ -1,10 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from dependencies import get_db, get_current_admin
 from models import Address, Review, User
 from schemas import UserRegister, UserUpdate
-from security import get_password_hash
+from security import check_password_strength, get_password_hash, normalize_email
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
@@ -17,13 +18,14 @@ def get_all_users(db: Session = Depends(get_db), current_admin: User = Depends(g
 @router.post("")
 def create_user_by_admin(user_data: UserRegister, db: Session = Depends(get_db),
                          current_admin: User = Depends(get_current_admin)):
-    if db.query(User).filter(User.email == user_data.email).first():
+    if db.query(User).filter(
+        func.lower(User.email) == normalize_email(user_data.email)
+    ).first():
         raise HTTPException(status_code=400, detail="Email đã tồn tại!")
-    if len(user_data.password) < 6:
-        raise HTTPException(status_code=400, detail="Mật khẩu phải có ít nhất 6 ký tự!")
+    check_password_strength(user_data.password)
 
     user = User(
-        email=user_data.email,
+        email=normalize_email(user_data.email),
         hashed_password=get_password_hash(user_data.password),
         full_name=user_data.full_name,
         is_admin=False,
@@ -50,8 +52,7 @@ def update_user(user_id: int, user_data: UserUpdate, db: Session = Depends(get_d
     if user_data.is_admin is not None:
         user.is_admin = user_data.is_admin
     if user_data.password is not None:
-        if len(user_data.password) < 6:
-            raise HTTPException(status_code=400, detail="Mật khẩu phải có ít nhất 6 ký tự!")
+        check_password_strength(user_data.password)
         user.hashed_password = get_password_hash(user_data.password)
 
     db.commit()

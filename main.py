@@ -57,6 +57,11 @@ app.include_router(tracking.router)
 app.include_router(admin.router)
 
 
+@app.get("/health", tags=["Health"])
+def health():
+    return {"status": "ok"}
+
+
 @app.on_event("startup")
 def startup_db_check():
     # Không có tài khoản admin mặc định: thiếu biến môi trường thì bỏ qua

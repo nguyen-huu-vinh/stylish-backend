@@ -24,6 +24,7 @@ from schemas import (
 )
 from ratelimit import rate_limit
 from security import (
+    check_password_strength,
     create_access_token,
     get_password_hash,
     normalize_email,
@@ -50,8 +51,7 @@ def register(user_data: UserRegister, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Email không hợp lệ")
     if db.query(User).filter(func.lower(User.email) == email).first():
         raise HTTPException(status_code=400, detail="Email này đã được sử dụng!")
-    if len(user_data.password) < 6:
-        raise HTTPException(status_code=400, detail="Mật khẩu phải có ít nhất 6 ký tự!")
+    check_password_strength(user_data.password)
 
     new_user = User(
         email=email,
@@ -189,8 +189,7 @@ def change_password(
 ):
     if not verify_password(password_data.current_password, current_user.hashed_password):
         raise HTTPException(status_code=400, detail="Mật khẩu hiện tại không chính xác")
-    if len(password_data.new_password) < 6:
-        raise HTTPException(status_code=400, detail="Mật khẩu mới phải có ít nhất 6 ký tự!")
+    check_password_strength(password_data.new_password)
 
     current_user.hashed_password = get_password_hash(password_data.new_password)
     db.commit()
@@ -260,8 +259,7 @@ def forgot_password(request: ForgotPasswordRequest, db: Session = Depends(get_db
     dependencies=[Depends(rate_limit("reset", 10, 600))],
 )
 def reset_password(request: ResetPasswordRequest, db: Session = Depends(get_db)):
-    if len(request.new_password) < 6:
-        raise HTTPException(status_code=400, detail="Mật khẩu mới phải có ít nhất 6 ký tự!")
+    check_password_strength(request.new_password)
 
     user = (
         db.query(User)

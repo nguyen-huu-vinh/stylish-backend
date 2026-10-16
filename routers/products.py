@@ -57,7 +57,11 @@ def get_products(
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
 ):
-    query = db.query(Product).options(joinedload(Product.category_ref))
+    query = (
+        db.query(Product)
+        .options(joinedload(Product.category_ref))
+        .filter(Product.is_active == True)
+    )
     if category is not None:
         query = query.join(Product.category_ref).filter(
             func.lower(Category.name) == category.strip().lower()
@@ -68,13 +72,14 @@ def get_products(
 
 @router.get("/trending")
 def get_trending_products(db: Session = Depends(get_db)):
-    products = db.query(Product).filter(Product.is_trending == True).all()
+    products = db.query(Product).filter(Product.is_active == True, Product.is_trending == True).all()
     return [_product_response(product) for product in products]
 
 
 @router.get("/sale")
 def get_sale_products(db: Session = Depends(get_db)):
     products = db.query(Product).filter(
+        Product.is_active == True,
         (Product.is_sale == True)
         | (
             (Product.discount_price.isnot(None))
@@ -86,19 +91,23 @@ def get_sale_products(db: Session = Depends(get_db)):
 
 @router.get("/deals-of-the-day")
 def get_deals_of_the_day(db: Session = Depends(get_db)):
-    products = db.query(Product).filter(Product.is_deal_of_the_day == True).all()
+    products = db.query(Product).filter(Product.is_active == True, Product.is_deal_of_the_day == True).all()
     return [_product_response(product) for product in products]
 
 
 @router.get("/new-arrivals")
 def get_new_products(db: Session = Depends(get_db)):
-    products = db.query(Product).filter(Product.is_new == True).all()
+    products = db.query(Product).filter(Product.is_active == True, Product.is_new == True).all()
     return [_product_response(product) for product in products]
 
 
 @router.get("/products/{product_id}")
 def get_product_detail(product_id: int, db: Session = Depends(get_db)):
-    product = db.query(Product).filter(Product.id == product_id).first()
+    product = (
+        db.query(Product)
+        .filter(Product.id == product_id, Product.is_active == True)
+        .first()
+    )
     if not product:
         raise HTTPException(status_code=404, detail="Không tìm thấy sản phẩm")
     return _product_response(product)
@@ -139,10 +148,12 @@ def update_product(
 @router.delete("/products/{product_id}")
 def delete_product(product_id: int, db: Session = Depends(get_db),
                    current_admin: User = Depends(get_current_admin)):
-    p = db.query(Product).filter(Product.id == product_id).first()
+    p = db.query(Product).filter(
+        Product.id == product_id, Product.is_active == True
+    ).first()
     if not p:
         raise HTTPException(status_code=404, detail="Không tìm thấy sản phẩm")
-    db.query(Review).filter(Review.product_id == product_id).delete()
-    db.delete(p)
+    # Xóa mềm: giữ lại dòng để đơn cũ và đánh giá không bị mồ côi
+    p.is_active = False
     db.commit()
     return {"message": "Đã xóa sản phẩm"}

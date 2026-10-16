@@ -97,6 +97,13 @@ def ensure_product_category_schema():
             connection.execute(text("ALTER TABLE products ADD COLUMN stock INTEGER"))
         if "sizes" not in columns:
             connection.execute(text("ALTER TABLE products ADD COLUMN sizes VARCHAR"))
+        if "is_active" not in columns:
+            connection.execute(
+                text(
+                    "ALTER TABLE products ADD COLUMN "
+                    "is_active BOOLEAN NOT NULL DEFAULT TRUE"
+                )
+            )
 
     product_columns = {
         column["name"]
