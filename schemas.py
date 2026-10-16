@@ -172,3 +172,30 @@ class GoogleLogin(BaseModel):
 class DeviceTokenIn(BaseModel):
     token: str = Field(min_length=10, max_length=4096)
     platform: Optional[str] = Field(default=None, max_length=20)
+
+
+class RefreshRequest(BaseModel):
+    refresh_token: str = Field(min_length=20, max_length=200)
+
+
+class VerifyEmailRequest(BaseModel):
+    email: str
+    otp: str = Field(pattern=r"^\d{6}$")
+
+
+class ResendVerificationRequest(BaseModel):
+    email: str
+
+
+class ReturnCreate(BaseModel):
+    reason: str = Field(min_length=5, max_length=500)
+
+
+class ReturnUpdate(BaseModel):
+    status: Literal["approved", "rejected", "received"]
+    note: Optional[str] = Field(default=None, max_length=300)
+
+
+class RefundCreate(BaseModel):
+    amount: Optional[float] = Field(default=None, gt=0)
+    note: Optional[str] = Field(default=None, max_length=300)

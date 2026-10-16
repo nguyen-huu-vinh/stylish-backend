@@ -9,13 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 import models  # noqa: F401  (phải import để create_all thấy các bảng)
 from config import ADMIN_EMAIL, ADMIN_PASSWORD
-from database import (
-    engine,
-    SessionLocal,
-    Base,
-    ensure_order_tracking_schema,
-    ensure_product_category_schema,
-)
+from database import SessionLocal, run_migrations
 from security import get_password_hash
 from routers import (
     addresses,
@@ -28,14 +22,13 @@ from routers import (
     notifications,
     orders,
     products,
+    returns,
     reviews,
     tracking,
     users,
 )
 
-Base.metadata.create_all(bind=engine)
-ensure_product_category_schema()
-ensure_order_tracking_schema()
+run_migrations()
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
@@ -86,6 +79,7 @@ app.include_router(users.router)
 app.include_router(products.router)
 app.include_router(categories.router)
 app.include_router(orders.router)
+app.include_router(returns.router)
 app.include_router(reviews.router)
 app.include_router(addresses.router)
 app.include_router(coupons.router)

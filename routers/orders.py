@@ -122,6 +122,20 @@ def _timeline(order: Order):
     return events
 
 
+def _return_response(request):
+    if request is None:
+        return None
+    return {
+        "id": request.id,
+        "order_id": request.order_id,
+        "reason": request.reason,
+        "status": request.status,
+        "admin_note": request.admin_note,
+        "created_at": request.created_at.isoformat(),
+        "updated_at": request.updated_at.isoformat(),
+    }
+
+
 def _admin_order_response(order: Order):
     # Chỉ admin mới thấy mã link shipper
     return {**_order_response(order), "tracking_token": order.tracking_token}
@@ -141,6 +155,9 @@ def _order_response(order: Order):
         "discount": order.discount or 0,
         "coupon_code": order.coupon_code,
         "created_at": order.created_at.isoformat(),
+        "refund_amount": order.refund_amount,
+        "refunded_at": order.refunded_at.isoformat() if order.refunded_at else None,
+        "return_request": _return_response(order.return_request),
         "paid": bool(order.paid),
         "paid_at": order.paid_at.isoformat() if order.paid_at else None,
         "bank_transfer": _bank_transfer(order),

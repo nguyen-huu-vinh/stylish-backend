@@ -1924,6 +1924,7 @@
                                    </button>`
                                 : ""
                             }
+                            ${returnBlock(o)}
                         </td>
                     </tr>
                 `;
@@ -1932,6 +1933,12 @@
 
         document.querySelectorAll(".order-status").forEach((select) => {
           select.addEventListener("change", () => updateOrderStatus(select));
+        });
+        document.querySelectorAll(".return-btn").forEach((btn) => {
+          btn.addEventListener("click", () => updateReturn(btn));
+        });
+        document.querySelectorAll(".refund-btn").forEach((btn) => {
+          btn.addEventListener("click", () => refundOrder(btn));
         });
         document.querySelectorAll(".paid-btn").forEach((btn) => {
           btn.addEventListener("click", () => toggleOrderPaid(btn));
@@ -1949,6 +1956,89 @@
           alert("Đã sao chép link giao hàng. Gửi link này cho shipper (Zalo, SMS...):\n\n" + link);
         } catch (e) {
           prompt("Sao chép link này và gửi cho shipper:", link);
+        }
+      }
+
+      const RETURN_LABELS = {
+        requested: "Khách yêu cầu trả hàng",
+        approved: "Đã duyệt trả hàng",
+        rejected: "Đã từ chối trả hàng",
+        received: "Đã nhận hàng trả",
+        refunded: "Đã hoàn tiền",
+      };
+
+      // Khối trả hàng / hoàn tiền hiện dưới ô trạng thái của mỗi đơn
+      function returnBlock(o) {
+        const rr = o.return_request;
+        const parts = [];
+        if (rr) {
+          parts.push(
+            `<div style="margin-top:8px"><span class="badge badge-gold">${RETURN_LABELS[rr.status]}</span><br><small>${escapeHtml(rr.reason)}</small></div>`,
+          );
+          const actions = {
+            requested: [["approved", "Duyệt"], ["rejected", "Từ chối"]],
+            approved: [["received", "Đã nhận hàng"]],
+          }[rr.status] || [];
+          actions.forEach(([status, label]) => {
+            parts.push(
+              `<button class="btn-action btn-toggle return-btn" style="margin-top:6px" data-id="${rr.id}" data-status="${status}">${label}</button>`,
+            );
+          });
+        }
+        if (o.refunded_at) {
+          parts.push(
+            `<div style="margin-top:6px"><span class="badge badge-sage">Đã hoàn ${formatVnd(o.refund_amount)}</span></div>`,
+          );
+        } else if (
+          o.paid &&
+          (o.status === "cancelled" ||
+            (rr && ["approved", "received"].includes(rr.status)))
+        ) {
+          parts.push(
+            `<button class="btn-action btn-toggle refund-btn" style="margin-top:6px" data-id="${o.id}" data-total="${o.total}">Hoàn tiền</button>`,
+          );
+        }
+        return parts.join("");
+      }
+
+      async function updateReturn(btn) {
+        const note = prompt("Ghi chú cho khách (có thể bỏ trống):", "");
+        if (note === null) return;
+        btn.disabled = true;
+        try {
+          const res = await fetch(`/admin/returns/${btn.dataset.id}`, {
+            method: "PUT",
+            headers: authJson(),
+            body: JSON.stringify({ status: btn.dataset.status, note: note.trim() || null }),
+          });
+          if (!res.ok) throw new Error((await res.json()).detail);
+          loadOrders();
+        } catch (e) {
+          alert(e.message || "Không thể cập nhật yêu cầu trả hàng!");
+          btn.disabled = false;
+        }
+      }
+
+      async function refundOrder(btn) {
+        const input = prompt(
+          "Số tiền hoàn (VNĐ). Bỏ trống để hoàn toàn bộ đơn:",
+          btn.dataset.total,
+        );
+        if (input === null) return;
+        const amount = input.trim() ? Number(input) : null;
+        if (amount !== null && !(amount > 0)) return alert("Số tiền không hợp lệ");
+        btn.disabled = true;
+        try {
+          const res = await fetch(`/admin/orders/${btn.dataset.id}/refund`, {
+            method: "POST",
+            headers: authJson(),
+            body: JSON.stringify({ amount }),
+          });
+          if (!res.ok) throw new Error((await res.json()).detail);
+          loadOrders();
+        } catch (e) {
+          alert(e.message || "Không thể hoàn tiền!");
+          btn.disabled = false;
         }
       }
 

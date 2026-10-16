@@ -129,3 +129,93 @@ def test_logout_all_revokes_tokens(client, user):
     assert client.get("/me", headers=user).status_code == 200
     assert client.post("/logout-all", headers=user).status_code == 200
     assert client.get("/me", headers=user).status_code == 401
+
+
+def _completed_order(client, admin, user, product):
+    oid = client.post("/orders", json=order_body(product), headers=user).json()["id"]
+    for status in ("confirmed", "shipping", "completed"):
+        client.put(f"/admin/orders/{oid}/status", json={"status": status}, headers=admin)
+    return oid
+
+
+def test_return_and_refund_flow(client, admin, user, product):
+    oid = _completed_order(client, admin, user, product)
+    stock_after_sale = client.get(f"/products/{product['id']}").json()["stock"]
+
+    assert client.post(f"/orders/{oid}/return", json={"reason": "ab"}, headers=user).status_code == 422
+    r = client.post(f"/orders/{oid}/return", json={"reason": "Sản phẩm bị lỗi"}, headers=user)
+    assert r.status_code == 201
+    rid = r.json()["return_request"]["id"]
+    assert client.post(f"/orders/{oid}/return", json={"reason": "Lần hai nữa"}, headers=user).status_code == 400
+
+    # Chưa duyệt thì chưa hoàn tiền được; không nhảy cóc trạng thái
+    assert client.post(f"/admin/orders/{oid}/refund", json={}, headers=admin).status_code == 400
+    assert client.put(f"/admin/returns/{rid}", json={"status": "received"}, headers=admin).status_code == 400
+    assert client.put(f"/admin/returns/{rid}", json={"status": "approved"}, headers=admin).status_code == 200
+    done = client.put(f"/admin/returns/{rid}", json={"status": "received"}, headers=admin)
+    assert done.status_code == 200
+    assert client.get(f"/products/{product['id']}").json()["stock"] == stock_after_sale + 1
+
+    assert client.post(f"/admin/orders/{oid}/refund", json={"amount": 10**9}, headers=admin).status_code == 400
+    ok = client.post(f"/admin/orders/{oid}/refund", json={}, headers=admin)
+    assert ok.status_code == 200
+    body = ok.json()
+    assert body["refund_amount"] == body["total"] and body["return_request"]["status"] == "refunded"
+    assert client.post(f"/admin/orders/{oid}/refund", json={}, headers=admin).status_code == 400
+    assert len(client.get("/admin/returns", headers=admin).json()) >= 1
+
+
+def test_cannot_return_unfinished_or_foreign_order(client, admin, user, product):
+    oid = client.post("/orders", json=order_body(product), headers=user).json()["id"]
+    assert client.post(f"/orders/{oid}/return", json={"reason": "Không thích"}, headers=user).status_code == 400
+    done = _completed_order(client, admin, user, product)
+    other = client.post("/register", json={"email": "other1@x.com", "password": "secret123"})
+    stranger = login(client, "other1@x.com", "secret123")
+    assert client.post(f"/orders/{done}/return", json={"reason": "Không phải của tôi"}, headers=stranger).status_code == 404
+
+
+def test_refund_cancelled_paid_order(client, admin, user, product):
+    oid = client.post("/orders", json=order_body(product, payment_method="bank"), headers=user)
+    oid = oid.json()["id"] if oid.status_code == 201 else client.post("/orders", json=order_body(product), headers=user).json()["id"]
+    client.put(f"/admin/orders/{oid}/paid", headers=admin)
+    assert client.post(f"/admin/orders/{oid}/refund", json={}, headers=admin).status_code == 400
+    client.put(f"/admin/orders/{oid}/status", json={"status": "cancelled"}, headers=admin)
+    assert client.post(f"/admin/orders/{oid}/refund", json={"amount": 1000}, headers=admin).json()["refund_amount"] == 1000
+
+
+def test_refresh_token_rotation(client):
+    client.post("/register", json={"email": "rt@x.com", "password": "secret123"})
+    session = client.post("/login", data={"username": "rt@x.com", "password": "secret123"}).json()
+    assert session["refresh_token"]
+    new = client.post("/refresh", json={"refresh_token": session["refresh_token"]})
+    assert new.status_code == 200
+    fresh = new.json()
+    me = client.get("/me", headers={"Authorization": f"Bearer {fresh['access_token']}"})
+    assert me.status_code == 200
+    # Token cũ đã xoay vòng: dùng lại bị từ chối và cả chuỗi bị thu hồi
+    assert client.post("/refresh", json={"refresh_token": session["refresh_token"]}).status_code == 401
+    assert client.post("/refresh", json={"refresh_token": fresh["refresh_token"]}).status_code == 401
+
+
+def test_logout_revokes_refresh_token(client):
+    client.post("/register", json={"email": "lo@x.com", "password": "secret123"})
+    s = client.post("/login", data={"username": "lo@x.com", "password": "secret123"}).json()
+    assert client.post("/logout", json={"refresh_token": s["refresh_token"]}).status_code == 200
+    assert client.post("/refresh", json={"refresh_token": s["refresh_token"]}).status_code == 401
+
+
+def test_email_verification_flow(client, monkeypatch):
+    import routers.auth as auth
+
+    sent = {}
+    monkeypatch.setattr(auth, "is_mailtrap_configured", lambda: True)
+    monkeypatch.setattr(auth, "send_email_verification_otp", lambda to, otp: sent.update(otp=otp))
+    monkeypatch.setattr(auth, "REQUIRE_EMAIL_VERIFICATION", True)
+
+    r = client.post("/register", json={"email": "ver@x.com", "password": "secret123"})
+    assert r.json()["verification_required"] is True and sent["otp"]
+    assert client.post("/login", data={"username": "ver@x.com", "password": "secret123"}).status_code == 403
+    assert client.post("/verify-email", json={"email": "ver@x.com", "otp": "000000"}).status_code == 400
+    ok = client.post("/verify-email", json={"email": "ver@x.com", "otp": sent["otp"]})
+    assert ok.status_code == 200 and ok.json()["refresh_token"]
+    assert client.post("/login", data={"username": "ver@x.com", "password": "secret123"}).status_code == 200

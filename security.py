@@ -1,3 +1,5 @@
+import hashlib
+import secrets
 from datetime import datetime, timedelta
 from timeutil import utcnow
 from jose import jwt
@@ -49,3 +51,13 @@ def check_password_strength(password: str) -> None:
 
 def normalize_email(email: str) -> str:
     return (email or "").strip().lower()
+
+
+def new_refresh_token() -> tuple:
+    """Trả về (token gửi cho client, bản băm lưu trong database)."""
+    token = secrets.token_urlsafe(48)
+    return token, hash_refresh_token(token)
+
+
+def hash_refresh_token(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()

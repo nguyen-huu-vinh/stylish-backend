@@ -152,3 +152,14 @@ def ensure_product_category_schema():
                     {Product.category_id: category.id}
                 )
         session.commit()
+
+
+def run_migrations():
+    """Đưa database lên phiên bản mới nhất bằng Alembic (chạy khi khởi động)."""
+    from alembic import command
+    from alembic.config import Config
+
+    root = os.path.dirname(os.path.abspath(__file__))
+    config = Config()
+    config.set_main_option("script_location", os.path.join(root, "alembic"))
+    command.upgrade(config, "head")

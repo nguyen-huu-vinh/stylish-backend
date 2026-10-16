@@ -31,7 +31,15 @@ def _reset_rate_limit():
 
 @pytest.fixture(autouse=True)
 def _no_network(monkeypatch):
+    import routers.auth as auth
     import routers.tracking as tracking
+
+    # .env có thể chứa khóa Mailtrap thật: test không bao giờ gửi email
+    monkeypatch.setattr(auth, "is_mailtrap_configured", lambda: False)
+    monkeypatch.setattr(
+        auth, "send_email_verification_otp", lambda *a, **k: None
+    )
+    monkeypatch.setattr(auth, "send_password_reset_otp", lambda *a, **k: None)
 
     monkeypatch.setattr(tracking, "_geocode", lambda address: (10.0, 106.0))
 

@@ -11,7 +11,19 @@ if not SECRET_KEY:
     )
 
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 1 ngày
+ACCESS_TOKEN_EXPIRE_MINUTES = int(
+    os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", str(60 * 24))  # mặc định 1 ngày
+)
+REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "30"))
+
+# Bật thì tài khoản mới phải xác minh email (OTP) mới đăng nhập được. Mặc định
+# tắt để app bản cũ không bị khóa; chỉ có tác dụng khi đã cấu hình Mailtrap.
+REQUIRE_EMAIL_VERIFICATION = os.getenv("REQUIRE_EMAIL_VERIFICATION", "").lower() in (
+    "1", "true", "yes",
+)
+
+# Số ngày kể từ lúc giao xong mà khách còn được yêu cầu trả hàng
+RETURN_WINDOW_DAYS = int(os.getenv("RETURN_WINDOW_DAYS", "7"))
 
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")

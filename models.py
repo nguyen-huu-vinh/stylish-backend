@@ -59,6 +59,8 @@ class UserDB(Base):
     is_admin = Column(Boolean, default=False)
     # Tăng lên để thu hồi mọi token đã cấp (đăng xuất khỏi tất cả thiết bị)
     token_version = Column(Integer, default=0, nullable=False, server_default="0")
+    # Đã xác minh email bằng OTP chưa (tài khoản cũ và Google mặc định là đã xác minh)
+    email_verified = Column(Boolean, default=True, nullable=False, server_default="1")
     avatar = relationship(
         "UserAvatarDB", uselist=False, cascade="all, delete-orphan"
     )
@@ -87,6 +89,56 @@ class PasswordResetOTPDB(Base):
     created_at = Column(DateTime, default=utcnow, nullable=False)
     expires_at = Column(DateTime, nullable=False)
     attempts = Column(Integer, default=0, nullable=False)
+
+
+class EmailVerificationOTPDB(Base):
+    __tablename__ = "email_verification_otps"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"),
+        unique=True, nullable=False,
+    )
+    otp_hash = Column(String, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    attempts = Column(Integer, default=0, nullable=False)
+
+
+class RefreshTokenDB(Base):
+    """Refresh token chỉ lưu bản băm; mỗi lần dùng được xoay vòng sang token mới."""
+
+    __tablename__ = "refresh_tokens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    token_hash = Column(String, unique=True, index=True, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    revoked = Column(Boolean, default=False, nullable=False, server_default="0")
+
+
+class ReturnRequestDB(Base):
+    """Yêu cầu trả hàng (cả đơn). requested -> approved/rejected -> received -> refunded."""
+
+    __tablename__ = "return_requests"
+
+    id = Column(Integer, primary_key=True, index=True)
+    order_id = Column(
+        Integer, ForeignKey("orders.id", ondelete="CASCADE"),
+        unique=True, nullable=False,
+    )
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    reason = Column(String, nullable=False)
+    status = Column(String, default="requested", nullable=False)
+    admin_note = Column(String, nullable=True)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    updated_at = Column(DateTime, default=utcnow, nullable=False)
+
+    order = relationship("OrderDB", back_populates="return_request")
 
 
 class OrderDB(Base):
@@ -118,6 +170,13 @@ class OrderDB(Base):
     # Đã nhận tiền chưa (chuyển khoản do admin xác nhận; COD tự đặt khi giao xong)
     paid = Column(Boolean, default=False, nullable=False, server_default="0")
     paid_at = Column(DateTime, nullable=True)
+    # Hoàn tiền: số tiền đã trả lại khách và thời điểm
+    refund_amount = Column(Float, nullable=True)
+    refunded_at = Column(DateTime, nullable=True)
+    return_request = relationship(
+        "ReturnRequestDB", back_populates="order", uselist=False,
+        cascade="all, delete-orphan",
+    )
 
     items = relationship(
         "OrderItemDB", back_populates="order", cascade="all, delete-orphan"
@@ -277,3 +336,6 @@ Address = AddressDB
 Coupon = CouponDB
 DeviceToken = DeviceTokenDB
 Notification = NotificationDB
+EmailVerificationOTP = EmailVerificationOTPDB
+RefreshToken = RefreshTokenDB
+ReturnRequest = ReturnRequestDB
