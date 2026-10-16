@@ -29,6 +29,13 @@ def _reset_rate_limit():
     ratelimit._hits.clear()
 
 
+@pytest.fixture(autouse=True)
+def _no_network(monkeypatch):
+    import routers.tracking as tracking
+
+    monkeypatch.setattr(tracking, "_geocode", lambda address: (10.0, 106.0))
+
+
 def login(client, email, password):
     r = client.post("/login", data={"username": email, "password": password})
     assert r.status_code == 200, r.text

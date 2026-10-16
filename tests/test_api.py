@@ -95,3 +95,31 @@ def test_users_list_does_not_leak_password_hash(client, admin):
     r = client.get("/users", headers=admin)
     assert r.status_code == 200
     assert "hashed_password" not in r.text
+
+
+def test_paid_flag_and_cod_auto_paid(client, admin, user, product):
+    oid = client.post("/orders", json=order_body(product), headers=user).json()["id"]
+    assert client.get(f"/orders/{oid}", headers=user).json()["paid"] is False
+    for status in ("confirmed", "shipping", "completed"):
+        client.put(f"/admin/orders/{oid}/status", json={"status": status}, headers=admin)
+    done = client.get(f"/orders/{oid}", headers=user).json()
+    assert done["paid"] is True and done["paid_at"]
+
+
+def test_admin_marks_order_paid(client, admin, user, product):
+    oid = client.post("/orders", json=order_body(product), headers=user).json()["id"]
+    r = client.put(f"/admin/orders/{oid}/paid", headers=admin)
+    assert r.status_code == 200 and r.json()["paid"] is True
+    assert client.put(f"/admin/orders/{oid}/paid", headers=user).status_code in (401, 403)
+
+
+def test_admin_stats(client, admin):
+    r = client.get("/admin/stats", headers=admin)
+    assert r.status_code == 200
+    assert {"orders_by_status", "revenue", "daily", "top_products"} <= r.json().keys()
+
+
+def test_order_is_geocoded_in_background(client, user, product):
+    oid = client.post("/orders", json=order_body(product), headers=user).json()["id"]
+    track = client.get(f"/orders/{oid}/tracking", headers=user).json()
+    assert track["destination"]["lat"] == 10.0

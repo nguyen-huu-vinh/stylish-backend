@@ -1,7 +1,9 @@
 import secrets
+from datetime import timedelta
 from urllib.parse import quote, urlencode
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from sqlalchemy import func
 from sqlalchemy.orm import Session, selectinload
 
 from config import BANK_ACCOUNT_NAME, BANK_ACCOUNT_NO, BANK_ID
@@ -10,6 +12,8 @@ from push import notify_order_status, record_order_notification
 from models import Order, OrderEvent, OrderItem, Product, User
 from routers.coupons import calculate_discount, release_coupon, reuse_coupon
 from routers.products import product_sizes
+from routers.tracking import geocode_order_task
+from timeutil import utcnow
 from schemas import OrderCancel, OrderCreate, OrderStatusUpdate
 
 router = APIRouter(tags=["Orders"])
@@ -137,6 +141,8 @@ def _order_response(order: Order):
         "discount": order.discount or 0,
         "coupon_code": order.coupon_code,
         "created_at": order.created_at.isoformat(),
+        "paid": bool(order.paid),
+        "paid_at": order.paid_at.isoformat() if order.paid_at else None,
         "bank_transfer": _bank_transfer(order),
         "timeline": _timeline(order),
         "items": [
@@ -156,6 +162,7 @@ def _order_response(order: Order):
 @router.post("/orders", status_code=201)
 def create_order(
     data: OrderCreate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -228,11 +235,15 @@ def create_order(
     record_order_notification(db, order.id, order.user_id, "pending")
     db.commit()
     db.refresh(order)
+    # Đổi địa chỉ ra tọa độ sau khi đã trả đơn, không bắt khách chờ Nominatim
+    background_tasks.add_task(geocode_order_task, order.id)
     return _order_response(order)
 
 
 @router.get("/orders/me")
 def get_my_orders(
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -241,6 +252,8 @@ def get_my_orders(
         .options(selectinload(Order.items), selectinload(Order.events))
         .filter(Order.user_id == current_user.id)
         .order_by(Order.created_at.desc())
+        .offset(offset)
+        .limit(limit)
         .all()
     )
     return [_order_response(order) for order in orders]
@@ -354,6 +367,8 @@ def update_order_status(
         reuse_coupon(db, order)
 
     order.status = data.status
+    if data.status == "completed" and order.payment_method == "cod" and not order.paid:
+        order.paid, order.paid_at = True, utcnow()
     order.events.append(OrderEvent(status=data.status, note=note or None))
     if data.status == "shipping" and not order.tracking_token:
         order.tracking_token = secrets.token_urlsafe(16)
@@ -367,3 +382,69 @@ def update_order_status(
             notify_order_status, order.id, order.user_id, order.status
         )
     return _admin_order_response(order)
+
+
+@router.put("/admin/orders/{order_id}/paid")
+def set_order_paid(
+    order_id: int,
+    paid: bool = True,
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(get_current_admin),
+):
+    """Admin xác nhận đã nhận (hoặc bỏ xác nhận) tiền của đơn."""
+    order = db.query(Order).filter(Order.id == order_id).first()
+    if not order:
+        raise HTTPException(status_code=404, detail="Không tìm thấy đơn hàng")
+    if order.status == "cancelled":
+        raise HTTPException(status_code=400, detail="Đơn đã hủy")
+    order.paid = paid
+    order.paid_at = utcnow() if paid else None
+    db.commit()
+    db.refresh(order)
+    return _admin_order_response(order)
+
+
+@router.get("/admin/stats")
+def get_admin_stats(
+    days: int = Query(30, ge=1, le=365),
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(get_current_admin),
+):
+    """Thống kê nhanh: đơn theo trạng thái, doanh thu và doanh thu theo ngày."""
+    since = utcnow() - timedelta(days=days)
+    by_status = dict(
+        db.query(Order.status, func.count(Order.id)).group_by(Order.status).all()
+    )
+    # Doanh thu tính trên đơn đã hoàn thành
+    done = db.query(Order).filter(Order.status == "completed", Order.created_at >= since)
+    revenue = sum(o.total for o in done.all())
+    daily = {}
+    for order in done.all():
+        key = order.created_at.date().isoformat()
+        entry = daily.setdefault(key, {"date": key, "orders": 0, "revenue": 0.0})
+        entry["orders"] += 1
+        entry["revenue"] += order.total
+    return {
+        "days": days,
+        "orders_by_status": by_status,
+        "total_orders": sum(by_status.values()),
+        "revenue": revenue,
+        "unpaid_orders": db.query(Order)
+        .filter(Order.paid == False, Order.status != "cancelled")
+        .count(),
+        "daily": sorted(daily.values(), key=lambda e: e["date"]),
+        "top_products": [
+            {"product_id": pid, "name": name, "quantity": int(qty)}
+            for pid, name, qty in db.query(
+                OrderItem.product_id,
+                OrderItem.product_name,
+                func.sum(OrderItem.quantity),
+            )
+            .join(Order, Order.id == OrderItem.order_id)
+            .filter(Order.status != "cancelled", Order.created_at >= since)
+            .group_by(OrderItem.product_id, OrderItem.product_name)
+            .order_by(func.sum(OrderItem.quantity).desc())
+            .limit(5)
+            .all()
+        ],
+    }

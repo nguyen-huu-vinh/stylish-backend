@@ -1,4 +1,5 @@
 from datetime import datetime
+from timeutil import utcnow
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func
@@ -125,7 +126,7 @@ def save_review(
     if review:
         review.rating = data.rating
         review.comment = comment or None
-        review.updated_at = datetime.utcnow()
+        review.updated_at = utcnow()
     else:
         review = Review(
             product_id=product_id,

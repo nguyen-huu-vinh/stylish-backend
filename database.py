@@ -37,6 +37,8 @@ def ensure_order_tracking_schema():
         "tracking_token": "VARCHAR",
         "coupon_code": "VARCHAR",
         "discount": "FLOAT NOT NULL DEFAULT 0",
+        "paid": "BOOLEAN NOT NULL DEFAULT FALSE",
+        "paid_at": "TIMESTAMP",
     }
     with engine.begin() as connection:
         columns = {

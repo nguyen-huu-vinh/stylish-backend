@@ -1,3 +1,5 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from sqlalchemy import func
 from fastapi.middleware.cors import CORSMiddleware
@@ -32,7 +34,13 @@ Base.metadata.create_all(bind=engine)
 ensure_product_category_schema()
 ensure_order_tracking_schema()
 
-app = FastAPI(title="E-Commerce API")
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    startup_db_check()
+    yield
+
+
+app = FastAPI(title="E-Commerce API", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -62,7 +70,6 @@ def health():
     return {"status": "ok"}
 
 
-@app.on_event("startup")
 def startup_db_check():
     # Không có tài khoản admin mặc định: thiếu biến môi trường thì bỏ qua
     if not ADMIN_EMAIL or not ADMIN_PASSWORD:
@@ -85,3 +92,4 @@ def startup_db_check():
             db.commit()
     finally:
         db.close()
+

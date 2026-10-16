@@ -1,4 +1,5 @@
 from datetime import datetime
+from timeutil import utcnow
 
 from sqlalchemy import (
     Boolean,
@@ -72,7 +73,7 @@ class UserAvatarDB(Base):
     content_type = Column(String, nullable=False)
     # Chỉ tải dữ liệu ảnh khi thật sự cần (khi phục vụ ảnh), không phải mỗi /me
     data = deferred(Column(LargeBinary, nullable=False))
-    updated_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=utcnow, nullable=False)
 
 
 class PasswordResetOTPDB(Base):
@@ -81,7 +82,7 @@ class PasswordResetOTPDB(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), unique=True, nullable=False)
     otp_hash = Column(String, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
     expires_at = Column(DateTime, nullable=False)
     attempts = Column(Integer, default=0, nullable=False)
 
@@ -98,7 +99,7 @@ class OrderDB(Base):
     payment_method = Column(String, nullable=False)
     status = Column(String, default="pending", nullable=False)
     total = Column(Float, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
 
     # Theo dõi đơn trên bản đồ
     delivery_lat = Column(Float, nullable=True)  # tọa độ địa chỉ nhận hàng
@@ -112,6 +113,9 @@ class OrderDB(Base):
     # Mã giảm giá đã áp dụng và số tiền được giảm (total đã trừ khoản này)
     coupon_code = Column(String, nullable=True)
     discount = Column(Float, default=0, nullable=False, server_default="0")
+    # Đã nhận tiền chưa (chuyển khoản do admin xác nhận; COD tự đặt khi giao xong)
+    paid = Column(Boolean, default=False, nullable=False, server_default="0")
+    paid_at = Column(DateTime, nullable=True)
 
     items = relationship(
         "OrderItemDB", back_populates="order", cascade="all, delete-orphan"
@@ -151,7 +155,7 @@ class OrderEventDB(Base):
     order_id = Column(Integer, ForeignKey("orders.id"), nullable=False, index=True)
     status = Column(String, nullable=False)
     note = Column(String, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
     order = relationship("OrderDB", back_populates="events")
 
 
@@ -169,8 +173,8 @@ class ReviewDB(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     rating = Column(Integer, nullable=False)
     comment = Column(String, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    updated_at = Column(DateTime, default=utcnow, nullable=False)
     user = relationship("UserDB")
 
 
@@ -188,7 +192,7 @@ class AddressDB(Base):
     lat = Column(Float, nullable=True)
     lng = Column(Float, nullable=True)
     is_default = Column(Boolean, default=False, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
 
 
 class CouponDB(Base):
@@ -205,7 +209,7 @@ class CouponDB(Base):
     used_count = Column(Integer, default=0, nullable=False)
     expires_at = Column(DateTime, nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
 
 
 class DeviceTokenDB(Base):
@@ -221,7 +225,7 @@ class DeviceTokenDB(Base):
     # Mỗi thiết bị có một token duy nhất; đổi tài khoản trên máy thì chuyển chủ
     token = Column(String, unique=True, nullable=False)
     platform = Column(String, nullable=True)  # android | ios
-    updated_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=utcnow, nullable=False)
 
 
 class NotificationDB(Base):
@@ -238,7 +242,7 @@ class NotificationDB(Base):
     body = Column(String, nullable=False)
     order_id = Column(Integer, nullable=True)  # bấm vào thì mở đơn này
     is_read = Column(Boolean, default=False, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
 
 
 # Điểm trung bình và số đánh giá, tính ngay trong câu SELECT sản phẩm để các

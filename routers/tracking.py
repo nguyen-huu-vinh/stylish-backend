@@ -3,6 +3,7 @@ import os
 import secrets
 import time
 from datetime import datetime
+from timeutil import utcnow
 
 import requests
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException
@@ -10,6 +11,7 @@ from fastapi.responses import FileResponse, HTMLResponse
 from sqlalchemy.orm import Session, selectinload
 
 from config import SHOP_LAT, SHOP_LNG, SHOP_NAME
+from database import SessionLocal
 from dependencies import get_current_user, get_db
 from models import Order, OrderEvent, User
 from push import notify_order_status, record_order_notification
@@ -103,18 +105,24 @@ def _road_route(order: Order):
     return result
 
 
-def _ensure_destination(order: Order, db: Session):
-    if order.geocoded:
-        return
+def geocode_order_task(order_id: int):
+    """Chạy nền: đổi địa chỉ đơn ra tọa độ, không giữ request của khách."""
+    db = SessionLocal()
     try:
-        coords = _geocode(order.address)
-    except requests.RequestException:
-        return  # mạng lỗi: lần mở sau thử lại
-    if coords:
-        order.delivery_lat, order.delivery_lng = coords
-    # Không tìm thấy cũng đánh dấu để không gọi Nominatim mỗi lần app hỏi
-    order.geocoded = True
-    db.commit()
+        order = db.query(Order).filter(Order.id == order_id).first()
+        if not order or order.geocoded:
+            return
+        try:
+            coords = _geocode(order.address)
+        except requests.RequestException:
+            return  # mạng lỗi: lần mở theo dõi sau sẽ thử lại
+        if coords:
+            order.delivery_lat, order.delivery_lng = coords
+        # Không tìm thấy cũng đánh dấu để không gọi Nominatim mỗi lần app hỏi
+        order.geocoded = True
+        db.commit()
+    finally:
+        db.close()
 
 
 def _point(lat, lng, **extra):
@@ -126,6 +134,7 @@ def _point(lat, lng, **extra):
 @router.get("/orders/{order_id}/tracking")
 def get_order_tracking(
     order_id: int,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -138,7 +147,8 @@ def get_order_tracking(
     if not order or (order.user_id != current_user.id and not current_user.is_admin):
         raise HTTPException(status_code=404, detail="Không tìm thấy đơn hàng")
 
-    _ensure_destination(order, db)
+    if not order.geocoded:
+        background_tasks.add_task(geocode_order_task, order.id)
     # Chỉ lộ vị trí shipper khi đơn đang giao
     shipper = None
     route = None
@@ -214,7 +224,7 @@ def update_shipper_location(
         raise HTTPException(status_code=400, detail="Đơn không còn ở trạng thái đang giao")
     order.shipper_lat = data.lat
     order.shipper_lng = data.lng
-    order.shipper_updated_at = datetime.utcnow()
+    order.shipper_updated_at = utcnow()
     db.commit()
     return {"ok": True}
 
@@ -230,6 +240,8 @@ def mark_delivered(
     if order.status != "shipping":
         raise HTTPException(status_code=400, detail="Đơn không còn ở trạng thái đang giao")
     order.status = "completed"
+    if order.payment_method == "cod" and not order.paid:
+        order.paid, order.paid_at = True, utcnow()
     order.events.append(OrderEvent(
         status="completed", note="Shipper đã giao hàng thành công",
     ))

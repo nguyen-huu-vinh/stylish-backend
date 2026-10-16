@@ -3,6 +3,7 @@ import hmac
 import logging
 import secrets
 from datetime import datetime, timedelta
+from timeutil import utcnow
 
 import requests
 from fastapi import APIRouter, Depends, HTTPException
@@ -214,7 +215,7 @@ def forgot_password(request: ForgotPasswordRequest, db: Session = Depends(get_db
         # Trả cùng một thông báo để không lộ email nào đã đăng ký
         return {"message": message}
 
-    now = datetime.utcnow()
+    now = utcnow()
     reset_record = (
         db.query(PasswordResetOTP)
         .filter(PasswordResetOTP.user_id == user.id)
@@ -274,7 +275,7 @@ def reset_password(request: ResetPasswordRequest, db: Session = Depends(get_db))
             .first()
         )
 
-    now = datetime.utcnow()
+    now = utcnow()
     invalid_otp = HTTPException(status_code=400, detail="OTP không hợp lệ hoặc đã hết hạn")
     if (
         user is None

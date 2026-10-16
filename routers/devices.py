@@ -1,4 +1,5 @@
 from datetime import datetime
+from timeutil import utcnow
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
@@ -22,7 +23,7 @@ def register_device(
         # Cùng một máy đăng nhập tài khoản khác: chuyển token sang chủ mới
         device.user_id = current_user.id
         device.platform = data.platform
-        device.updated_at = datetime.utcnow()
+        device.updated_at = utcnow()
     else:
         db.add(DeviceToken(
             user_id=current_user.id, token=data.token, platform=data.platform

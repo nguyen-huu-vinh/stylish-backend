@@ -1,5 +1,6 @@
 import secrets
 from datetime import datetime
+from timeutil import utcnow
 
 from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
 from sqlalchemy.orm import Session
@@ -42,7 +43,7 @@ async def upload_avatar(
     avatar.key = secrets.token_urlsafe(16)
     avatar.content_type = content_type
     avatar.data = data
-    avatar.updated_at = datetime.utcnow()
+    avatar.updated_at = utcnow()
     current_user.avatar = avatar
     db.commit()
     db.refresh(current_user)

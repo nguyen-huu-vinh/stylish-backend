@@ -1,4 +1,5 @@
 from datetime import datetime
+from timeutil import utcnow
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.exc import IntegrityError
@@ -44,7 +45,7 @@ def calculate_discount(
     coupon = query.first()
     if not coupon or not coupon.is_active:
         raise HTTPException(status_code=400, detail="Mã giảm giá không hợp lệ")
-    if coupon.expires_at and coupon.expires_at < datetime.utcnow():
+    if coupon.expires_at and coupon.expires_at < utcnow():
         raise HTTPException(status_code=400, detail="Mã giảm giá đã hết hạn")
     if coupon.usage_limit is not None and coupon.used_count >= coupon.usage_limit:
         raise HTTPException(status_code=400, detail="Mã giảm giá đã hết lượt sử dụng")

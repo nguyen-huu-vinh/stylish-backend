@@ -71,13 +71,21 @@ def get_products(
 
 
 @router.get("/trending")
-def get_trending_products(db: Session = Depends(get_db)):
-    products = db.query(Product).filter(Product.is_active == True, Product.is_trending == True).all()
+def get_trending_products(
+    limit: int = Query(200, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+):
+    products = db.query(Product).filter(Product.is_active == True, Product.is_trending == True).order_by(Product.id).offset(offset).limit(limit).all()
     return [_product_response(product) for product in products]
 
 
 @router.get("/sale")
-def get_sale_products(db: Session = Depends(get_db)):
+def get_sale_products(
+    limit: int = Query(200, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+):
     products = db.query(Product).filter(
         Product.is_active == True,
         (Product.is_sale == True)
@@ -85,19 +93,27 @@ def get_sale_products(db: Session = Depends(get_db)):
             (Product.discount_price.isnot(None))
             & (Product.discount_price < Product.price)
         )
-    ).all()
+    ).order_by(Product.id).offset(offset).limit(limit).all()
     return [_product_response(product) for product in products]
 
 
 @router.get("/deals-of-the-day")
-def get_deals_of_the_day(db: Session = Depends(get_db)):
-    products = db.query(Product).filter(Product.is_active == True, Product.is_deal_of_the_day == True).all()
+def get_deals_of_the_day(
+    limit: int = Query(200, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+):
+    products = db.query(Product).filter(Product.is_active == True, Product.is_deal_of_the_day == True).order_by(Product.id).offset(offset).limit(limit).all()
     return [_product_response(product) for product in products]
 
 
 @router.get("/new-arrivals")
-def get_new_products(db: Session = Depends(get_db)):
-    products = db.query(Product).filter(Product.is_active == True, Product.is_new == True).all()
+def get_new_products(
+    limit: int = Query(200, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+):
+    products = db.query(Product).filter(Product.is_active == True, Product.is_new == True).order_by(Product.id).offset(offset).limit(limit).all()
     return [_product_response(product) for product in products]
 
 
